@@ -9,6 +9,7 @@ from database import get_db_connection, init_db
 from lead_reader import import_leads_from_csv
 from email_generator import generate_cold_email, generate_subject_line
 from scheduler import start_scheduler
+from inbox_reader import process_inbox
 import uvicorn
 
 app = FastAPI(title="VFX Email Outreach System")
@@ -88,16 +89,43 @@ async def view_draft(request: Request, lead_id: int):
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM email_logs WHERE lead_id = ? ORDER BY id DESC LIMIT 1", (lead_id,))
         draft = cursor.fetchone()
-        
+
     if not draft:
         return "<p>No draft found.</p><a href='/'>Back</a>"
-        
+
     return f"""
     <h2>Subject: {draft['subject']}</h2>
     <hr>
     <pre style='white-space: pre-wrap; font-family: sans-serif;'>{draft['body']}</pre>
     <br><a href='/'>Back to Dashboard</a>
     """
+
+
+@app.get("/fetch-replies-now")
+async def fetch_replies_now():
+    try:
+        print("Manual reply fetch triggered")
+        count = process_inbox()
+        return {"status": "success", "message": "Replies fetched and updated", "count": count}
+    except Exception as e:
+        print(f"Error in manual fetch: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.get("/api/replies")
+async def get_replies():
+    """
+    Fetch all leads that have replied.
+    Returns JSON format for the dashboard.
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT name, email, reply_status as status, reply_text as reply FROM leads WHERE status = 'Replied'")
+            replies = [dict(row) for row in cursor.fetchall()]
+            return replies
+        except Exception as e:
+            print("Error fetching replies from DB:", e)
+            return []
 
 @app.post("/upload_csv", response_class=HTMLResponse)
 async def upload_csv(file: UploadFile = File(...)):

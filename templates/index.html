@@ -7,27 +7,27 @@
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; color: #333; margin: 0; padding: 20px; }
         h1 { text-align: center; color: #2c3e50; }
-        .container { max-width: 1000px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .container { max-width: 1200px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
         th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
         th { background-color: #34495e; color: white; }
         tr:hover { background-color: #f1f1f1; }
-        .btn { padding: 8px 12px; background-color: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; text-decoration: none; font-size: 14px; }
+        .btn { padding: 8px 12px; background-color: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; text-decoration: none; font-size: 14px; white-space: nowrap; }
         .btn:hover { background-color: #2980b9; }
         .btn-success { background-color: #2ecc71; }
         .btn-success:hover { background-color: #27ae60; }
-        .badge { padding: 4px 8px; border-radius: 12px; font-size: 12px; color: white; }
+        .badge { padding: 4px 8px; border-radius: 12px; font-size: 12px; color: white; white-space: nowrap; }
         .badge-pending { background-color: #f39c12; }
         .badge-drafted { background-color: #3498db; }
         .badge-sent { background-color: #9b59b6; }
         .badge-replied { background-color: #2ecc71; }
         
-        .stage-badge { border: 1px solid #ccc; padding: 4px 8px; border-radius: 12px; font-size: 12px;}
+        .stage-badge { border: 1px solid #ccc; padding: 4px 8px; border-radius: 12px; font-size: 12px; white-space: nowrap; display: inline-block; text-align: center; }
         .stage-Interested { background-color: #d4edda; color: #155724; border-color: #c3e6cb;}
         .stage-Not-Interested { background-color: #f8d7da; color: #721c24; border-color: #f5c6cb;}
         .stage-Meeting { background-color: #cce5ff; color: #004085; border-color: #b8daff;}
         
-        .controls { display: flex; justify-content: space-between; margin-bottom: 20px; }
+        .controls { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; gap: 15px; }
     </style>
 </head>
 <body>
@@ -36,21 +36,24 @@
     <h1>VFX Outreach Dashboard</h1>
 
     <div class="controls">
-        <div style="margin-bottom: 20px; padding: 15px; border: 1px dashed #ccc; border-radius: 8px; background: #fafafa;">
-            <h3>Upload New Leads (CSV)</h3>
-            <form action="/upload_csv" method="post" enctype="multipart/form-data">
+        <div style="padding: 15px; border: 1px dashed #ccc; border-radius: 8px; background: #fafafa; display: flex; align-items: center; gap: 10px;">
+            <h3 style="margin: 0;">Upload New Leads (CSV)</h3>
+            <form action="/upload_csv" method="post" enctype="multipart/form-data" style="margin: 0; display: flex; align-items: center;">
                 <input type="file" name="file" accept=".csv" required style="margin-right: 10px;">
                 <button type="submit" class="btn">Upload CSV</button>
             </form>
         </div>
-        <form action="/import" method="post" style="display:inline;">
-            <input type="hidden" name="file_path" value="sample_leads.csv">
-            <button type="submit" class="btn">Import sample_leads.csv</button>
-        </form>
         
-        <form action="/generate_all" method="post" style="display:inline;">
-            <button type="submit" class="btn btn-success">Generate AI Drafts for All Pending</button>
-        </form>
+        <div style="display: flex; gap: 10px;">
+            <form action="/import" method="post" style="margin: 0;">
+                <input type="hidden" name="file_path" value="sample_leads.csv">
+                <button type="submit" class="btn">Import sample_leads.csv</button>
+            </form>
+            
+            <form action="/generate_all" method="post" style="margin: 0;">
+                <button type="submit" class="btn btn-success">Generate AI Drafts for All Pending</button>
+            </form>
+        </div>
     </div>
 
     <table>
@@ -97,7 +100,81 @@
             {% endfor %}
         </tbody>
     </table>
+
+    <h2 style="margin-top: 40px; color: #2c3e50;">Active Replies Dashboard</h2>
+    <div id="replies-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Reply Status</th>
+                    <th>Reply Text</th>
+                </tr>
+            </thead>
+            <tbody id="replies-table-body">
+                <tr><td colspan="4" style="text-align:center;">Loading replies...</td></tr>
+            </tbody>
+        </table>
+    </div>
 </div>
 
+<script>
+    // Manual fetch endpoint
+    async function fetchRepliesNow() {
+        try {
+            await fetch('/fetch-replies-now');
+        } catch (error) {
+            console.error('Error fetching replies:', error);
+        }
+    }
+
+    // Fetch and populate replies
+    function fetchReplies() {
+        fetch('/api/replies')
+            .then(response => response.json())
+            .then(data => {
+                const tbody = document.getElementById('replies-table-body');
+                tbody.innerHTML = '';
+                
+                if (data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">No replies yet.</td></tr>';
+                    return;
+                }
+
+                data.forEach(reply => {
+                    const tr = document.createElement('tr');
+                    
+                    // Simple logic to style status badges
+                    let badgeClass = 'stage-badge';
+                    if (reply.status === 'Interested') badgeClass += ' stage-Interested';
+                    else if (reply.status === 'Not Interested') badgeClass += ' stage-Not-Interested';
+                    else if (reply.status === 'Meeting Request') badgeClass += ' stage-Meeting';
+                    else badgeClass += ' stage-Neutral';
+
+                    tr.innerHTML = `
+                        <td><strong>${reply.name || 'Unknown'}</strong></td>
+                        <td><a href="mailto:${reply.email}">${reply.email}</a></td>
+                        <td><span class="${badgeClass}">${reply.status || 'Unknown'}</span></td>
+                        <td style="max-width: 400px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${reply.reply}">
+                            ${reply.reply || 'No text extracted'}
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            })
+            .catch(error => {
+                console.error("Error fetching replies:", error);
+                document.getElementById('replies-table-body').innerHTML = '<tr><td colspan="4" style="text-align:center; color: red;">Failed to load replies</td></tr>';
+            });
+    }
+
+    // Call once on load, then poll every 60s
+    window.onload = async () => {
+        await fetchRepliesNow();
+        fetchReplies();
+        setInterval(fetchReplies, 60000);
+    };
+</script>
 </body>
 </html>
