@@ -9,7 +9,7 @@ from config import settings
 from gmail_client import get_gmail_service
 from email_generator import generate_cold_email, generate_subject_line
 
-CSV_FILE = "sample_leads.csv"  # You can rename this to leads.csv if preferred
+CSV_FILE = "data/leads.csv"  # You can rename this to leads.csv if preferred
 CHECK_INTERVAL_SECONDS = 60
 
 def load_leads(csv_path: str) -> pd.DataFrame:
