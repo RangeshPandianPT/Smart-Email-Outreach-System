@@ -36,6 +36,13 @@
     <h1>VFX Outreach Dashboard</h1>
 
     <div class="controls">
+        <div style="margin-bottom: 20px; padding: 15px; border: 1px dashed #ccc; border-radius: 8px; background: #fafafa;">
+            <h3>Upload New Leads (CSV)</h3>
+            <form action="/upload_csv" method="post" enctype="multipart/form-data">
+                <input type="file" name="file" accept=".csv" required style="margin-right: 10px;">
+                <button type="submit" class="btn">Upload CSV</button>
+            </form>
+        </div>
         <form action="/import" method="post" style="display:inline;">
             <input type="hidden" name="file_path" value="sample_leads.csv">
             <button type="submit" class="btn">Import sample_leads.csv</button>
