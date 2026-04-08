@@ -101,6 +101,38 @@
         </tbody>
     </table>
 
+    <!-- Analytics Dashboard -->
+    <h2 style="margin-top: 40px; color: #2c3e50;">Performance Analytics</h2>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-bottom: 20px;">
+        <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center;">
+            <h4 style="margin: 0; color: #7f8c8d;">Emails Sent</h4>
+            <strong id="stat-sent" style="font-size: 24px; color: #2c3e50;">--</strong>
+        </div>
+        <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center;">
+            <h4 style="margin: 0; color: #7f8c8d;">Replies Received</h4>
+            <strong id="stat-replies" style="font-size: 24px; color: #2ecc71;">--</strong>
+        </div>
+        <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center;">
+            <h4 style="margin: 0; color: #7f8c8d;">Interested Leads</h4>
+            <strong id="stat-interested" style="font-size: 24px; color: #f39c12;">--</strong>
+        </div>
+        <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center;">
+            <h4 style="margin: 0; color: #7f8c8d;">Conversion Rate</h4>
+            <strong id="stat-conversion" style="font-size: 24px; color: #3498db;">--%</strong>
+        </div>
+        <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center;">
+            <h4 style="margin: 0; color: #7f8c8d;">Avg Response</h4>
+            <strong id="stat-response" style="font-size: 24px; color: #9b59b6;">-- hrs</strong>
+        </div>
+    </div>
+    
+    <div style="background: #e8f4f8; padding: 15px; border-radius: 8px; border-left: 4px solid #3498db; margin-bottom: 30px;">
+        <h4 style="margin-top: 0; color: #2c3e50;">System Insights</h4>
+        <ul id="insights-list" style="margin: 0; padding-left: 20px; color: #34495e;">
+            <li>Loading insights...</li>
+        </ul>
+    </div>
+
     <h2 style="margin-top: 40px; color: #2c3e50;">Active Replies Dashboard</h2>
     <div id="replies-container">
         <table>
@@ -126,6 +158,34 @@
             await fetch('/fetch-replies-now');
         } catch (error) {
             console.error('Error fetching replies:', error);
+        }
+    }
+
+    async function fetchAnalytics() {
+        try {
+            const res = await fetch('/api/analytics');
+            const data = await res.json();
+            if(data.error) return;
+            
+            document.getElementById('stat-sent').innerText = data.total_sent;
+            document.getElementById('stat-replies').innerText = data.total_replies;
+            document.getElementById('stat-interested').innerText = data.interested;
+            document.getElementById('stat-conversion').innerText = data.conversion_rate.toFixed(1) + '%';
+            document.getElementById('stat-response').innerText = data.avg_response_time_hours.toFixed(1) + ' hrs';
+            
+            const insightsList = document.getElementById('insights-list');
+            insightsList.innerHTML = '';
+            if(data.insights && data.insights.length > 0) {
+                data.insights.forEach(insight => {
+                    const li = document.createElement('li');
+                    li.innerText = insight;
+                    insightsList.appendChild(li);
+                });
+            } else {
+                insightsList.innerHTML = '<li>No insights yet.</li>';
+            }
+        } catch (e) {
+            console.error('Failed to load analytics', e);
         }
     }
 
@@ -173,8 +233,12 @@
     window.onload = async () => {
         await fetchRepliesNow();
         fetchReplies();
-        setInterval(fetchReplies, 60000);
+        fetchAnalytics();
+        setInterval(() => {
+            fetchReplies();
+            fetchAnalytics();
+        }, 60000);
     };
 </script>
 </body>
-</html>
+</html>  

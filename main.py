@@ -179,5 +179,18 @@ async def upload_csv(file: UploadFile = File(...)):
         print(f"Error handling CSV upload: {e}")
         return f"<p>An error occurred matching the CSV format.</p><br><a href='/'>Back</a>"
 
+from analytics import get_analytics_data, generate_insights
+
+@app.get("/api/analytics")
+async def get_analytics():
+    try:
+        data = get_analytics_data()
+        data['insights'] = generate_insights(data)
+        print("Analytics updated")
+        return data
+    except Exception as e:
+        print(f"Error fetching analytics data: {e}")
+        return {"error": str(e)}
+
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
