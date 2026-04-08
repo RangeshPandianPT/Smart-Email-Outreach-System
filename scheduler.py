@@ -6,21 +6,54 @@ import atexit
 
 scheduler = BackgroundScheduler()
 
+
+def _shutdown_scheduler():
+    if scheduler.running:
+        scheduler.shutdown(wait=False)
+
 def start_scheduler():
+    if scheduler.running:
+        print("Scheduler already running; skipping duplicate startup.")
+        return
+
     # Job to process inbox every 5 minutes
-    scheduler.add_job(func=process_inbox, trigger="interval", minutes=5, id='inbox_job')
+    scheduler.add_job(
+        func=process_inbox,
+        trigger="interval",
+        minutes=5,
+        id='inbox_job',
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
 
     # Job to process email sending queue every 1 minute
-    scheduler.add_job(func=process_email_queue, trigger="interval", minutes=1, id='email_queue_job')
+    scheduler.add_job(
+        func=process_email_queue,
+        trigger="interval",
+        minutes=1,
+        id='email_queue_job',
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
 
     # Job to process follow-ups every 1 hour
-    scheduler.add_job(func=process_followups, trigger="interval", hours=1, id='followups_job')
+    scheduler.add_job(
+        func=process_followups,
+        trigger="interval",
+        hours=1,
+        id='followups_job',
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
 
     scheduler.start()
     print("Scheduler started. Background tasks are running.")
     
     # Shut down the scheduler when exiting the app
-    atexit.register(lambda: scheduler.shutdown())
+    atexit.register(_shutdown_scheduler)
 
 if __name__ == "__main__":
     start_scheduler()
