@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 import io
+import tempfile
 from fastapi import FastAPI, Request, Form, BackgroundTasks, UploadFile, File
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -171,9 +172,27 @@ async def upload_csv(file: UploadFile = File(...)):
         df_final.to_csv(csv_path, index=False)
         print("CSV uploaded successfully")
         print("Leads appended to dataset")
+
+        # Sync uploaded rows into SQLite so they appear immediately on dashboard
+        imported_count = 0
+        temp_csv_path = None
+        try:
+            fd, temp_csv_path = tempfile.mkstemp(suffix=".csv")
+            os.close(fd)
+            df_new.to_csv(temp_csv_path, index=False)
+            imported_count = import_leads_from_csv(temp_csv_path)
+        except Exception as sync_err:
+            print(f"Warning: CSV saved but DB sync failed: {sync_err}")
+        finally:
+            if temp_csv_path and os.path.exists(temp_csv_path):
+                os.remove(temp_csv_path)
         
         # Provide success message and lead count
-        return f"<p>Successfully uploaded and appended {len(df_new)} leads!</p><br><a href='/'>Back to Dashboard</a>"
+        return (
+            f"<p>Successfully uploaded {len(df_new)} leads to CSV. "
+            f"Imported {imported_count} new leads into dashboard.</p>"
+            "<br><a href='/'>Back to Dashboard</a>"
+        )
         
     except Exception as e:
         print(f"Error handling CSV upload: {e}")

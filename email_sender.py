@@ -75,7 +75,13 @@ def process_email_queue():
     with get_db_connection() as conn:
         cursor = conn.cursor()
         # Find all leads that have an email log but are not 'Sent'
-        cursor.execute("SELECT l.id FROM leads l JOIN email_logs el ON l.id = el.lead_id WHERE l.status = 'Drafted' OR l.status = 'Pending' AND el.sent_at IS NULL")
+        cursor.execute("""
+            SELECT DISTINCT l.id
+            FROM leads l
+            JOIN email_logs el ON l.id = el.lead_id
+            WHERE l.status IN ('Drafted', 'Pending')
+              AND el.sent_at IS NULL
+        """)
         pending_leads = cursor.fetchall()
 
     for row in pending_leads:
