@@ -4,7 +4,7 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-from config import settings
+from src.core.config import settings
 
 # If you change these scopes, delete token.json so you re-authenticate.
 SCOPES = [
@@ -16,13 +16,25 @@ SCOPES = [
 def get_credentials_path() -> str:
     """
     Resolves the path to credentials.json.
-    Checks the configured path first, then falls back to the project root.
+    Checks the configured path first, then falls back to src/core/credentials.json.
     """
     configured = settings.GCP_CREDENTIALS_PATH
     if os.path.isabs(configured):
         return configured
-    # Resolve relative to this file's directory (project root)
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), configured)
+    # Resolve relative paths from the repository root so docs/.env are intuitive.
+    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    configured_path = os.path.join(repo_root, configured)
+    if os.path.exists(configured_path):
+        return configured_path
+
+    # Fallback to src/core/credentials.json
+    return os.path.join(repo_root, "src", "core", "credentials.json")
+
+
+def get_token_path() -> str:
+    """Stores token.json in src/core to keep auth artifacts centralized."""
+    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    return os.path.join(repo_root, "src", "core", "token.json")
 
 def get_gmail_service():
     """
@@ -31,7 +43,7 @@ def get_gmail_service():
     Subsequent runs will use the saved token.json automatically.
     """
     creds = None
-    token_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'token.json')
+    token_path = get_token_path()
     credentials_path = get_credentials_path()
 
     # Load existing token if it exists

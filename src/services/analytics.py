@@ -1,5 +1,5 @@
 import sqlite3
-from database import get_db_connection
+from src.core.database import get_db_connection
 
 def get_analytics_data():
     with get_db_connection() as conn:

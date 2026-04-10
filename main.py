@@ -6,11 +6,11 @@ from fastapi import FastAPI, Request, Form, BackgroundTasks, UploadFile, File
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from database import get_db_connection, init_db
-from lead_reader import import_leads_from_csv
-from email_generator import generate_cold_email, generate_subject_line
-from scheduler import start_scheduler
-from inbox_reader import process_inbox
+from src.core.database import get_db_connection, init_db
+from src.services.lead_reader import import_leads_from_csv
+from src.services.email_generator import generate_cold_email, generate_subject_line
+from src.services.scheduler import start_scheduler
+from src.services.inbox_reader import process_inbox
 import uvicorn
 
 app = FastAPI(title="VFX Email Outreach System")
@@ -198,7 +198,7 @@ async def upload_csv(file: UploadFile = File(...)):
         print(f"Error handling CSV upload: {e}")
         return f"<p>An error occurred matching the CSV format.</p><br><a href='/'>Back</a>"
 
-from analytics import get_analytics_data, generate_insights
+from src.services.analytics import get_analytics_data, generate_insights
 
 @app.get("/api/analytics")
 async def get_analytics():

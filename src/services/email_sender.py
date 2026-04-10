@@ -3,9 +3,9 @@ import time
 import random
 from datetime import datetime
 from email.message import EmailMessage
-from gmail_client import get_gmail_service
-from database import get_db_connection
-from config import settings
+from src.services.gmail_client import get_gmail_service
+from src.core.database import get_db_connection
+from src.core.config import settings
 
 def create_message(to_email, subject, body_text):
     message = EmailMessage()

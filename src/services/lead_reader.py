@@ -1,6 +1,6 @@
 import pandas as pd
 import re
-from database import get_db_connection
+from src.core.database import get_db_connection
 
 def is_valid_email(email: str) -> bool:
     """

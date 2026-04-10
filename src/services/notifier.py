@@ -1,6 +1,6 @@
 import smtplib
 from email.message import EmailMessage
-from config import settings
+from src.core.config import settings
 
 def send_alert_email(subject: str, body: str):
     """
