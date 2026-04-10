@@ -1,5 +1,5 @@
 import re
-with open(r'd:\Email\email_sender.py', 'r', encoding='utf-8') as f:
+with open(r'd:\Email\src\services\email_sender.py', 'r', encoding='utf-8') as f:
     text = f.read()
 
 idx = text.find('def process_followups():')
@@ -36,5 +36,5 @@ follow_ups = '''def process_followups():
 '''
 text += follow_ups
 
-with open(r'd:\Email\email_sender.py', 'w', encoding='utf-8') as f:
+with open(r'd:\Email\src\services\email_sender.py', 'w', encoding='utf-8') as f:
     f.write(text)
