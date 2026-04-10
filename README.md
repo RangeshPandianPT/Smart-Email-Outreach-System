@@ -67,7 +67,9 @@ The project follows a clean, modular architecture:
 
 4. **Configure Authentication:**
    - Place your Google API `credentials.json` inside the `src/core/` directory.
+   - In `.env`, set `GCP_CREDENTIALS_PATH=src/core/credentials.json`.
    - Upon first run, the system will generate a `token.json` file in `src/core/` to store your session.
+   - Optional auth check: `python -m src.services.gmail_client`
 
 ## 💻 Usage
 
@@ -77,6 +79,3 @@ To start the main application or scheduling daemon:
 python main.py
 ```
 
-## 📄 License
-
-This project is licensed under the MIT License.

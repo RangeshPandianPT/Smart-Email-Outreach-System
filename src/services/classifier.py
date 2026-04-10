@@ -5,7 +5,7 @@ Classifies email reply text into one of four categories using
 Groq LLM API. Falls back to keyword matching.
 """
 import requests
-from config import settings
+from src.core.config import settings
 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 HEADERS = {"Authorization": f"Bearer {settings.GROQ_API_KEY}"}

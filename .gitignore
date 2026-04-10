@@ -12,6 +12,10 @@ credentials.json
 token.json
 client_secret.json
 client_secrets.json
+src/core/credentials.json
+src/core/token.json
+src/core/client_secret.json
+src/core/client_secrets.json
 
 # Python
 __pycache__/

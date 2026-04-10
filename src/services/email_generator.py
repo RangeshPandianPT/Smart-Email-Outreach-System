@@ -6,7 +6,7 @@ Falls back to a strong template if the API fails.
 """
 import requests
 import random
-from config import settings
+from src.core.config import settings
 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 HEADERS = {"Authorization": f"Bearer {settings.GROQ_API_KEY}"}

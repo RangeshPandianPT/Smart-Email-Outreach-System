@@ -5,9 +5,9 @@ import traceback
 from email.message import EmailMessage
 
 # Importing existing tools so we don't duplicate logic.
-from config import settings
-from gmail_client import get_gmail_service
-from email_generator import generate_cold_email, generate_subject_line
+from src.core.config import settings
+from src.services.gmail_client import get_gmail_service
+from src.services.email_generator import generate_cold_email, generate_subject_line
 
 CSV_FILE = "data/leads.csv"  # You can rename this to leads.csv if preferred
 CHECK_INTERVAL_SECONDS = 60

@@ -1,4 +1,4 @@
-with open(r'd:\Email\inbox_reader.py', 'r', encoding='utf-8') as f:
+with open(r'd:\Email\src\services\inbox_reader.py', 'r', encoding='utf-8') as f:
     text = f.read()
 
 bad_except = '                    except Exception as e:\n        print(f\'Error checking inbox: {e}\')'
@@ -15,5 +15,5 @@ end_function = '''
 '''
 
 text += end_function
-with open(r'd:\Email\inbox_reader.py', 'w', encoding='utf-8') as f:
+with open(r'd:\Email\src\services\inbox_reader.py', 'w', encoding='utf-8') as f:
     f.write(text)

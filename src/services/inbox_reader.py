@@ -1,9 +1,9 @@
 import base64
 import time
 from bs4 import BeautifulSoup
-from gmail_client import get_gmail_service
-from database import get_db_connection
-from classifier import classify_reply
+from src.services.gmail_client import get_gmail_service
+from src.core.database import get_db_connection
+from src.services.classifier import classify_reply
 
 processed_message_ids = set()
 
