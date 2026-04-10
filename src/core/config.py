@@ -1,11 +1,10 @@
-﻿import os
-from pydantic_settings import BaseSettings
+﻿from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     # AI keys - system uses Groq API
     OPENAI_API_KEY: str = "hf_placeholder"
     GROQ_API_KEY: str = "your_groq_api_key"
-    GCP_CREDENTIALS_PATH: str = "credentials.json"
+    GCP_CREDENTIALS_PATH: str = "src/core/credentials.json"
 
     NOTIFICATION_EMAIL: str = "your_email@domain.com"
     SMTP_HOST: str = "smtp.gmail.com"
