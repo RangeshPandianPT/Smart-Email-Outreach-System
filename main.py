@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from src.core.database import get_db_connection, init_db
 from src.services.lead_reader import import_leads_from_csv
 from src.services.email_generator import generate_cold_email, generate_subject_line
+from src.services.email_sender import process_email_queue
 from src.services.scheduler import start_scheduler
 from src.services.inbox_reader import process_inbox
 import uvicorn
@@ -41,7 +42,8 @@ async def import_leads(file_path: str = Form("sample_leads.csv")):
     return RedirectResponse(url="/", status_code=303)
 
 @app.post("/generate/{lead_id}")
-async def generate_email(lead_id: int):
+async def generate_email(lead_id: int, background_tasks: BackgroundTasks):
+    draft_created = False
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM leads WHERE id = ?", (lead_id,))
@@ -58,12 +60,18 @@ async def generate_email(lead_id: int):
                 """, (lead_id, subject, body))
                 
                 cursor.execute("UPDATE leads SET status = 'Drafted' WHERE id = ?", (lead_id,))
+                draft_created = True
+
+    # Trigger sending right away so deployment does not rely only on scheduler timing.
+    if draft_created:
+        background_tasks.add_task(process_email_queue)
                 
     return RedirectResponse(url="/", status_code=303)
 
 @app.post("/generate_all")
 async def generate_all_pending(background_tasks: BackgroundTasks):
     def _generate_all():
+        drafted_any = False
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM leads WHERE status = 'Pending'")
@@ -79,9 +87,20 @@ async def generate_all_pending(background_tasks: BackgroundTasks):
                         VALUES (?, ?, ?)
                     """, (lead['id'], subject, body))
                     cursor.execute("UPDATE leads SET status = 'Drafted' WHERE id = ?", (lead['id'],))
+                    drafted_any = True
                     conn.commit() # commit each to show progress
+
+        # Immediately process drafted leads after generation.
+        if drafted_any:
+            process_email_queue()
                     
     background_tasks.add_task(_generate_all)
+    return RedirectResponse(url="/", status_code=303)
+
+
+@app.post("/send_now")
+async def send_now(background_tasks: BackgroundTasks):
+    background_tasks.add_task(process_email_queue)
     return RedirectResponse(url="/", status_code=303)
 
 @app.get("/view_draft/{lead_id}", response_class=HTMLResponse)

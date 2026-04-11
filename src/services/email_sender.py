@@ -11,7 +11,7 @@ def create_message(to_email, subject, body_text):
     message = EmailMessage()
     message.set_content(body_text)
     message['To'] = to_email
-    message['From'] = settings.SMTP_USER # Should be the authenticated Gmail account
+    # Let Gmail API use the authenticated account as sender to avoid From mismatch errors.
     message['Subject'] = subject
 
     encoded_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
@@ -20,7 +20,11 @@ def create_message(to_email, subject, body_text):
 def send_email_to_lead(lead_id: int):
     # Retrieves the lead from Db, generates subject and body (if not generated),      
     # and sends via Gmail API. Updates DB with status and thread_id.
-    service = get_gmail_service()
+    try:
+        service = get_gmail_service()
+    except Exception as e:
+        print(f"Failed to initialize Gmail service for lead {lead_id}: {type(e).__name__}: {e}")
+        return False
 
     with get_db_connection() as conn:
         cursor = conn.cursor()
@@ -67,7 +71,7 @@ def send_email_to_lead(lead_id: int):
             return True
 
         except Exception as e:
-            print(f"Failed to send to {lead['email']}: {e}")
+            print(f"Failed to send to {lead['email']}: {type(e).__name__}: {e}")
             return False
 
 def process_email_queue():
@@ -84,9 +88,20 @@ def process_email_queue():
         """)
         pending_leads = cursor.fetchall()
 
+    if not pending_leads:
+        print("No pending drafted emails in queue.")
+        return
+
+    print(f"Processing email queue for {len(pending_leads)} lead(s).")
+
     for row in pending_leads:
         lead_id = row['id']
-        success = send_email_to_lead(lead_id)
+        try:
+            success = send_email_to_lead(lead_id)
+        except Exception as e:
+            print(f"Unexpected queue error for lead {lead_id}: {type(e).__name__}: {e}")
+            success = False
+
         if success:
             delay = random.randint(settings.MIN_DELAY_SECONDS, settings.MAX_DELAY_SECONDS)
             print(f"Sleeping for {delay} seconds before next email...")
