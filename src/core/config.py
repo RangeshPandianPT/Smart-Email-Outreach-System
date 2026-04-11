@@ -4,7 +4,13 @@ class Settings(BaseSettings):
     # AI keys - system uses Groq API
     OPENAI_API_KEY: str = "hf_placeholder"
     GROQ_API_KEY: str = "your_groq_api_key"
+    APP_ENV: str = "development"
+
     GCP_CREDENTIALS_PATH: str = "src/core/credentials.json"
+    GMAIL_TOKEN_PATH: str = "src/core/token.json"
+    # Optional: JSON payloads for headless deployments (Render, etc.)
+    GMAIL_CREDENTIALS_JSON: str = ""
+    GMAIL_TOKEN_JSON: str = ""
 
     NOTIFICATION_EMAIL: str = "your_email@domain.com"
     SMTP_HOST: str = "smtp.gmail.com"

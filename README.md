@@ -71,6 +71,19 @@ The project follows a clean, modular architecture:
    - Upon first run, the system will generate a `token.json` file in `src/core/` to store your session.
    - Optional auth check: `python -m src.services.gmail_client`
 
+### Deploying on Render (Important)
+
+Render is a headless environment, so browser-based OAuth (`run_local_server`) cannot run there.
+
+- Generate Gmail OAuth once on your local machine to obtain `token.json` (contains refresh token).
+- In Render environment variables, set:
+   - `APP_ENV=production`
+   - `GMAIL_TOKEN_JSON` to the full JSON content of your local `token.json`
+   - Optional: `GMAIL_CREDENTIALS_JSON` to full `credentials.json` content
+- Alternative: mount secret files and set `GCP_CREDENTIALS_PATH` and `GMAIL_TOKEN_PATH` accordingly.
+
+If no valid token is available in production, email sending will fail by design with a clear runtime error.
+
 ## 💻 Usage
 
 To start the main application or scheduling daemon:
