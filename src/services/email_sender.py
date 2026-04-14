@@ -7,6 +7,42 @@ from src.services.gmail_client import get_gmail_service
 from src.core.database import get_db_connection
 from src.core.config import settings
 
+
+def _emails_sent_today(cursor) -> int:
+    cursor.execute(
+        """
+        SELECT COUNT(*)
+        FROM leads
+        WHERE email_sent_timestamp IS NOT NULL
+          AND date(email_sent_timestamp, 'localtime') = date('now', 'localtime')
+        """
+    )
+    return cursor.fetchone()[0]
+
+
+def _can_send_more_today(cursor) -> bool:
+    return _emails_sent_today(cursor) < settings.MAX_EMAILS_PER_DAY
+
+
+def _send_with_retry(service, msg, max_attempts: int = 3):
+    last_error = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return service.users().messages().send(userId='me', body=msg).execute()
+        except Exception as e:
+            last_error = e
+            if attempt == max_attempts:
+                break
+
+            backoff_seconds = min(2 ** attempt, 20) + random.uniform(0.1, 0.9)
+            print(
+                f"Send attempt {attempt}/{max_attempts} failed: {type(e).__name__}: {e}. "
+                f"Retrying in {backoff_seconds:.1f}s..."
+            )
+            time.sleep(backoff_seconds)
+
+    raise last_error
+
 def create_message(to_email, subject, body_text):
     message = EmailMessage()
     message.set_content(body_text)
@@ -28,6 +64,25 @@ def send_email_to_lead(lead_id: int):
 
     with get_db_connection() as conn:
         cursor = conn.cursor()
+
+        if not _can_send_more_today(cursor):
+            limit_msg = (
+                f"Daily send limit reached ({settings.MAX_EMAILS_PER_DAY}). "
+                f"Lead {lead_id} will remain queued."
+            )
+            cursor.execute(
+                """
+                UPDATE leads
+                SET last_send_error = ?,
+                    last_send_attempt_timestamp = CURRENT_TIMESTAMP,
+                    last_updated = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (limit_msg, lead_id),
+            )
+            print(limit_msg)
+            return False
+
         cursor.execute("SELECT * FROM leads WHERE id = ?", (lead_id,))
         lead = cursor.fetchone()
 
@@ -50,6 +105,17 @@ def send_email_to_lead(lead_id: int):
             return False
 
         try:
+            cursor.execute(
+                """
+                UPDATE leads
+                SET send_attempts = COALESCE(send_attempts, 0) + 1,
+                    last_send_attempt_timestamp = CURRENT_TIMESTAMP,
+                    last_updated = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (lead_id,),
+            )
+
             # Create Gmail message
             body = draft['body']
             subject = draft['subject']
@@ -57,13 +123,24 @@ def send_email_to_lead(lead_id: int):
 
             msg = create_message(to_email, subject, body)
 
-            # Send message
-            sent_message = service.users().messages().send(userId='me', body=msg).execute()
+            # Send message with transient retry support.
+            sent_message = _send_with_retry(service, msg, max_attempts=3)
             message_id = sent_message['id']
             thread_id = sent_message['threadId']
 
             # Update DB
-            cursor.execute("UPDATE leads SET status = 'Sent', thread_id = ?, last_updated = CURRENT_TIMESTAMP, email_sent_timestamp = CURRENT_TIMESTAMP WHERE id = ?", (thread_id, lead_id))
+            cursor.execute(
+                """
+                UPDATE leads
+                SET status = 'Sent',
+                    thread_id = ?,
+                    last_updated = CURRENT_TIMESTAMP,
+                    email_sent_timestamp = CURRENT_TIMESTAMP,
+                    last_send_error = NULL
+                WHERE id = ?
+                """,
+                (thread_id, lead_id),
+            )
 
             cursor.execute("UPDATE email_logs SET sent_at = CURRENT_TIMESTAMP, message_id = ? WHERE id = ?", (message_id, draft['id']))
 
@@ -71,6 +148,15 @@ def send_email_to_lead(lead_id: int):
             return True
 
         except Exception as e:
+            cursor.execute(
+                """
+                UPDATE leads
+                SET last_send_error = ?,
+                    last_updated = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (f"{type(e).__name__}: {e}"[:500], lead_id),
+            )
             print(f"Failed to send to {lead['email']}: {type(e).__name__}: {e}")
             return False
 
@@ -88,6 +174,10 @@ def process_email_queue():
         """)
         pending_leads = cursor.fetchall()
 
+        if not _can_send_more_today(cursor):
+            print(f"Daily send limit reached ({settings.MAX_EMAILS_PER_DAY}). Queue processing skipped.")
+            return
+
     if not pending_leads:
         print("No pending drafted emails in queue.")
         return
@@ -96,6 +186,14 @@ def process_email_queue():
 
     for row in pending_leads:
         lead_id = row['id']
+
+        # Re-check in each loop in case other jobs sent emails during this run.
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            if not _can_send_more_today(cursor):
+                print(f"Daily send limit reached ({settings.MAX_EMAILS_PER_DAY}). Stopping queue.")
+                break
+
         try:
             success = send_email_to_lead(lead_id)
         except Exception as e:
