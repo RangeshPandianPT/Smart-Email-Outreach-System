@@ -39,7 +39,18 @@ def init_db():
         ''')
 
         # Add new columns to existing table safely 
-        for col in ["reply_text TEXT", "reply_status TEXT", "reply_timestamp TIMESTAMP", "last_message_id TEXT", "email_sent_timestamp TIMESTAMP", "followup_count INTEGER DEFAULT 0", "last_followup_timestamp TIMESTAMP"]:
+        for col in [
+            "reply_text TEXT",
+            "reply_status TEXT",
+            "reply_timestamp TIMESTAMP",
+            "last_message_id TEXT",
+            "email_sent_timestamp TIMESTAMP",
+            "followup_count INTEGER DEFAULT 0",
+            "last_followup_timestamp TIMESTAMP",
+            "send_attempts INTEGER DEFAULT 0",
+            "last_send_attempt_timestamp TIMESTAMP",
+            "last_send_error TEXT",
+        ]:
             try:
                 cursor.execute(f"ALTER TABLE leads ADD COLUMN {col}")
             except sqlite3.OperationalError:
@@ -54,6 +65,20 @@ def init_db():
             body TEXT,
             sent_at TIMESTAMP,
             message_id TEXT,
+            FOREIGN KEY(lead_id) REFERENCES leads(id)
+        )
+        ''')
+
+        # Tracks Gmail message processing to prevent duplicate handling across restarts.
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS inbox_processed_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            message_id TEXT UNIQUE,
+            sender_email TEXT,
+            lead_id INTEGER,
+            status TEXT NOT NULL,             -- processed, ignored, failed
+            error TEXT,
+            processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(lead_id) REFERENCES leads(id)
         )
         ''')
