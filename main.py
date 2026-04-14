@@ -20,6 +20,16 @@ app = FastAPI(title="VFX Email Outreach System")
 os.makedirs("templates", exist_ok=True)
 templates = Jinja2Templates(directory="templates")
 
+
+def render_template(name: str, request: Request, context: dict):
+    merged_context = {"request": request, **context}
+    try:
+        # Newer Starlette versions prefer explicit request/name/context parameters.
+        return templates.TemplateResponse(request=request, name=name, context=merged_context)
+    except TypeError:
+        # Older Starlette versions expect (name, context) with request inside context.
+        return templates.TemplateResponse(name, merged_context)
+
 @app.on_event("startup")
 def on_startup():
     init_db()
@@ -34,11 +44,17 @@ async def read_root(request: Request):
         
         leads = [dict(lead) for lead in leads_raw]
         
-    return templates.TemplateResponse("index.html", {"request": request, "leads": leads})
+    return render_template("index.html", request, {"leads": leads})
 
 @app.post("/import")
-async def import_leads(file_path: str = Form("sample_leads.csv")):
-    import_leads_from_csv(file_path)
+async def import_leads(file_path: str = Form("data/sample_leads.csv")):
+    resolved_path = file_path.strip()
+    if not os.path.isabs(resolved_path) and not os.path.exists(resolved_path):
+        fallback_path = os.path.join("data", resolved_path)
+        if os.path.exists(fallback_path):
+            resolved_path = fallback_path
+
+    import_leads_from_csv(resolved_path)
     return RedirectResponse(url="/", status_code=303)
 
 @app.post("/generate/{lead_id}")

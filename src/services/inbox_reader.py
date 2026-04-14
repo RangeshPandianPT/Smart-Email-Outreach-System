@@ -1,14 +1,114 @@
 import base64
+import binascii
 import time
 from bs4 import BeautifulSoup
 from src.services.gmail_client import get_gmail_service
 from src.core.database import get_db_connection
 from src.services.classifier import classify_reply
 
-processed_message_ids = set()
+PROCESSED = "processed"
+IGNORED = "ignored"
+FAILED = "failed"
+
+
+def _extract_sender_email(headers) -> str:
+    for header in headers:
+        if header.get('name', '').lower() == 'from':
+            sender_raw = header.get('value', '')
+            if '<' in sender_raw and '>' in sender_raw:
+                return sender_raw.split('<')[1].split('>')[0].strip()
+            return sender_raw.strip()
+    return ""
+
+
+def _decode_body_data(body_data: str) -> str:
+    if not body_data:
+        return ""
+
+    padded = body_data + '=' * (-len(body_data) % 4)
+    try:
+        return base64.urlsafe_b64decode(padded).decode('utf-8', errors='ignore')
+    except (binascii.Error, ValueError):
+        return ""
+
+
+def _find_part_text(payload, target_mime_type: str) -> str:
+    if payload.get('mimeType') == target_mime_type:
+        data = payload.get('body', {}).get('data', "")
+        decoded = _decode_body_data(data)
+        if decoded:
+            return decoded
+
+    for part in payload.get('parts', []) or []:
+        found = _find_part_text(part, target_mime_type)
+        if found:
+            return found
+
+    return ""
+
+
+def _extract_message_text(payload) -> str:
+    plain_text = _find_part_text(payload, 'text/plain')
+    if plain_text:
+        return plain_text.strip()
+
+    html_text = _find_part_text(payload, 'text/html')
+    if html_text:
+        return BeautifulSoup(html_text, "html.parser").get_text(" ", strip=True)
+
+    root_body = payload.get('body', {}).get('data', "")
+    fallback_text = _decode_body_data(root_body)
+    return fallback_text.strip()
+
+
+def _already_processed(cursor, msg_id: str) -> bool:
+    cursor.execute(
+        "SELECT status FROM inbox_processed_messages WHERE message_id = ?",
+        (msg_id,),
+    )
+    row = cursor.fetchone()
+    return bool(row and row['status'] == PROCESSED)
+
+
+def _record_message_status(
+    cursor,
+    msg_id: str,
+    sender_email: str | None,
+    lead_id: int | None,
+    status: str,
+    error: str | None = None,
+):
+    error_value = (error or "")[:500] or None
+
+    cursor.execute(
+        "SELECT 1 FROM inbox_processed_messages WHERE message_id = ?",
+        (msg_id,),
+    )
+    existing = cursor.fetchone()
+
+    if existing:
+        cursor.execute(
+            """
+            UPDATE inbox_processed_messages
+            SET sender_email = ?,
+                lead_id = ?,
+                status = ?,
+                error = ?,
+                processed_at = CURRENT_TIMESTAMP
+            WHERE message_id = ?
+            """,
+            (sender_email, lead_id, status, error_value, msg_id),
+        )
+    else:
+        cursor.execute(
+            """
+            INSERT INTO inbox_processed_messages (message_id, sender_email, lead_id, status, error)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (msg_id, sender_email, lead_id, status, error_value),
+        )
 
 def process_inbox():
-    global processed_message_ids
     new_replies_count = 0
     service = get_gmail_service()
 
@@ -24,72 +124,87 @@ def process_inbox():
             cursor = conn.cursor()
 
             for msg_ref in messages:
-                msg_id = msg_ref['id']
-
-                if msg_id in processed_message_ids:
+                msg_id = msg_ref.get('id')
+                if not msg_id:
                     continue
-                processed_message_ids.add(msg_id)
+
+                if _already_processed(cursor, msg_id):
+                    continue
 
                 msg = service.users().messages().get(userId='me', id=msg_id, format='full').execute()
 
                 payload = msg.get('payload', {})
                 headers = payload.get('headers', [])
-                sender_email = ""
-                for header in headers:
-                    if header.get('name', '').lower() == 'from':
-                        sender_raw = header.get('value', '')
-                        if '<' in sender_raw and '>' in sender_raw:
-                            sender_email = sender_raw.split('<')[1].split('>')[0].strip()
-                        else:
-                            sender_email = sender_raw.strip()
-                        break
+                sender_email = _extract_sender_email(headers)
 
                 if not sender_email:
+                    _record_message_status(cursor, msg_id, None, None, IGNORED, "missing_sender")
                     continue
 
-                cursor.execute("SELECT * FROM leads WHERE email = ?", (sender_email,))
+                cursor.execute("SELECT * FROM leads WHERE lower(email) = lower(?)", (sender_email,))
                 lead = cursor.fetchone()
 
                 if lead:
                     print(f"New reply detected from {sender_email}")
-                    body_data = ""
-                    if 'parts' in payload:
-                        for part in payload['parts']:
-                            if part.get('mimeType') == 'text/plain':
-                                body_data = part.get('body', {}).get('data', "")
-                                break
-                    elif 'body' in payload:
-                        body_data = payload.get('body', {}).get('data', "")
+                    text_content = _extract_message_text(payload)
 
-                    if not body_data:
+                    if not text_content:
+                        _record_message_status(
+                            cursor,
+                            msg_id,
+                            sender_email,
+                            lead['id'],
+                            FAILED,
+                            "empty_or_undecodable_body",
+                        )
                         continue
 
                     try:
-                        text_content = base64.urlsafe_b64decode(body_data).decode('utf-8')
-                        text_content = BeautifulSoup(text_content, "html.parser").get_text()
+                        classification = classify_reply(text_content)
+                        print(f"Classified as {classification}")
+
+                        cursor.execute('''
+                            UPDATE leads
+                            SET status = 'Replied',
+                                deal_stage = ?,
+                                reply_status = ?,
+                                reply_text = ?,
+                                reply_timestamp = CURRENT_TIMESTAMP,
+                                last_message_id = ?,
+                                last_updated = CURRENT_TIMESTAMP
+                            WHERE id = ?
+                        ''', (classification, classification, text_content, msg_id, lead['id']))
+
+                        # Only mark message as read once it maps to a lead and processing succeeds.
+                        service.users().messages().modify(
+                            userId='me',
+                            id=msg_id,
+                            body={'removeLabelIds': ['UNREAD']},
+                        ).execute()
+
+                        _record_message_status(cursor, msg_id, sender_email, lead['id'], PROCESSED)
+                        print('Database updated')
+                        new_replies_count += 1
                     except Exception as e:
-                        print("Failed to decode email body:", e)
-                        continue
-
-                    classification = classify_reply(text_content)
-                    print(f"Classified as {classification}")
-
-                    cursor.execute('''
-                        UPDATE leads
-                        SET status = 'Replied',
-                            deal_stage = ?,
-                            reply_status = ?,
-                            reply_text = ?,
-                            reply_timestamp = CURRENT_TIMESTAMP
-                        WHERE id = ?
-                    ''', (classification, classification, text_content, lead['id']))
-
-                    print('Database updated')
-                    new_replies_count += 1
-
-                service.users().messages().modify(
-                    userId='me', id=msg_id, body={'removeLabelIds': ['UNREAD']}
-                ).execute()
+                        _record_message_status(
+                            cursor,
+                            msg_id,
+                            sender_email,
+                            lead['id'],
+                            FAILED,
+                            str(e),
+                        )
+                        print(f"Failed to process matched reply for {sender_email}: {e}")
+                else:
+                    # Keep unmatched unread emails untouched for manual triage.
+                    _record_message_status(
+                        cursor,
+                        msg_id,
+                        sender_email,
+                        None,
+                        IGNORED,
+                        "sender_not_in_leads",
+                    )
 
     except Exception as e:
         print(f'Error checking inbox: {e}')
