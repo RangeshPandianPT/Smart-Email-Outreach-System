@@ -111,3 +111,51 @@ def generate_subject_line(lead) -> str:
         return subject
 
     return f"Quick question for {company}"
+
+
+def _fallback_followup_email(lead, followup_number: int) -> str:
+    """Fallback template for follow-ups."""
+    if followup_number == 1:
+        return (
+            f"Hi {lead['name']},\n\n"
+            f"Just bubbling this up to the top of your inbox. "
+            f"Are you currently exploring any {lead['service_needed']} partners?\n\n"
+            f"Best,\nThe VFX Team"
+        )
+    else:
+        return (
+            f"Hi {lead['name']},\n\n"
+            f"I won't keep bothering you, but I'm still convinced our team could add a lot of value "
+            f"to {lead['company']}'s upcoming projects.\n\n"
+            f"Feel free to reach out whenever the timing is right.\n\n"
+            f"Best,\nThe VFX Team"
+        )
+
+
+def generate_followup_email(lead, previous_body: str, followup_number: int) -> str:
+    """
+    Generates a personalized follow-up email based on the previous interaction.
+    """
+    name = lead["name"]
+    company = lead["company"]
+    service = lead["service_needed"]
+    
+    if followup_number == 1:
+        instruction = "Write a polite, short (under 50 words) follow-up email bumping the previous message. Do not be pushy."
+    else:
+        instruction = "Write a final 'breakup' email (under 50 words). Be professional, leave the door open for future collaboration, and mention you won't keep following up."
+        
+    prompt = (
+        f"[INST] {instruction} "
+        f"You are reaching out to {name} at {company} about {service}. "
+        f"Previous email sent: '{previous_body[:200]}...' "
+        f"Output ONLY the new email body, nothing else. No subject line. [/INST]"
+    )
+
+    body = _groq_generate(prompt, max_tokens=150)
+
+    # Quality check
+    if body and len(body) > 20 and name.split()[0].lower() in body.lower():
+        return body
+
+    return _fallback_followup_email(lead, followup_number)

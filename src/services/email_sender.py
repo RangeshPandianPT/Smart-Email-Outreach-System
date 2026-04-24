@@ -6,6 +6,8 @@ from email.message import EmailMessage
 from src.services.gmail_client import get_gmail_service
 from src.core.database import get_db_connection
 from src.core.config import settings
+from src.services.email_generator import generate_followup_email
+
 
 
 def _emails_sent_today(cursor) -> int:
@@ -43,15 +45,22 @@ def _send_with_retry(service, msg, max_attempts: int = 3):
 
     raise last_error
 
-def create_message(to_email, subject, body_text):
+def create_message(to_email, subject, body_text, previous_message_id=None, thread_id=None):
     message = EmailMessage()
     message.set_content(body_text)
     message['To'] = to_email
     # Let Gmail API use the authenticated account as sender to avoid From mismatch errors.
     message['Subject'] = subject
+    
+    if previous_message_id:
+        message['In-Reply-To'] = previous_message_id
+        message['References'] = previous_message_id
 
     encoded_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
-    return {'raw': encoded_message}
+    payload = {'raw': encoded_message}
+    if thread_id:
+        payload['threadId'] = thread_id
+    return payload
 
 def send_email_to_lead(lead_id: int):
     # Retrieves the lead from Db, generates subject and body (if not generated),      
@@ -208,23 +217,42 @@ def process_email_queue():
 def process_followups():
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT id, email, email_sent_timestamp, last_followup_timestamp, followup_count FROM leads WHERE status = 'Sent' AND followup_count < 2 AND email_sent_timestamp IS NOT NULL")
+        cursor.execute("SELECT * FROM leads WHERE status = 'Sent' AND followup_count < 2 AND email_sent_timestamp IS NOT NULL")
         
         leads = cursor.fetchall()
         for lead in leads:
             now = datetime.utcnow()
             last_action_str = lead['last_followup_timestamp'] or lead['email_sent_timestamp']
+            
+            # Follow-up 1 after 48h, Follow-up 2 after 96h (4 days)
+            delay_hours = 48 if lead['followup_count'] == 0 else 96
+            
             try:
                 last_action = datetime.strptime(last_action_str, '%Y-%m-%d %H:%M:%S')
                 diff_hours = (now - last_action).total_seconds() / 3600
-                if diff_hours >= 48:
-                    print(f"Triggering follow-up for {lead['email']}")
-                    subject = "Checking in"
-                    body = "We wanted to follow up on our previous email.\n\nThanks!"
+                if diff_hours >= delay_hours:
+                    print(f"Triggering follow-up {lead['followup_count'] + 1} for {lead['email']}")
+                    
+                    # Fetch previous email log for context and threading
+                    cursor.execute("SELECT * FROM email_logs WHERE lead_id = ? ORDER BY id DESC LIMIT 1", (lead['id'],))
+                    prev_log = cursor.fetchone()
+                    
+                    if not prev_log:
+                        print(f"No previous email log found for lead {lead['id']}. Skipping follow-up.")
+                        continue
+                        
+                    subject = prev_log['subject']
+                    body = generate_followup_email(lead, prev_log['body'], lead['followup_count'] + 1)
                     to_email = lead['email']
                     
                     service = get_gmail_service()
-                    msg = create_message(to_email, subject, body)
+                    msg = create_message(
+                        to_email=to_email, 
+                        subject=subject, 
+                        body_text=body,
+                        previous_message_id=prev_log['message_id'],
+                        thread_id=lead['thread_id']
+                    )
                     
                     sent_msg = service.users().messages().send(userId='me', body=msg).execute()
                     
