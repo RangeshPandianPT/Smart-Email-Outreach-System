@@ -92,3 +92,11 @@ To start the main application or scheduling daemon:
 python main.py
 ```
 
+## ✅ Running Tests
+
+Run the automated test suite locally:
+
+```bash
+python -m pytest -q
+```
+
