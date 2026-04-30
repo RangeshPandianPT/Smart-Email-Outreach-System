@@ -78,10 +78,6 @@ async def generate_email(lead_id: int, background_tasks: BackgroundTasks):
                 cursor.execute("UPDATE leads SET status = 'Drafted' WHERE id = ?", (lead_id,))
                 draft_created = True
 
-    # Trigger sending right away so deployment does not rely only on scheduler timing.
-    if draft_created:
-        background_tasks.add_task(process_email_queue)
-                
     return RedirectResponse(url="/", status_code=303)
 
 @app.post("/generate_all")
@@ -106,10 +102,6 @@ async def generate_all_pending(background_tasks: BackgroundTasks):
                     drafted_any = True
                     conn.commit() # commit each to show progress
 
-        # Immediately process drafted leads after generation.
-        if drafted_any:
-            process_email_queue()
-                    
     background_tasks.add_task(_generate_all)
     return RedirectResponse(url="/", status_code=303)
 
@@ -135,6 +127,54 @@ async def view_draft(request: Request, lead_id: int):
     <pre style='white-space: pre-wrap; font-family: sans-serif;'>{draft['body']}</pre>
     <br><a href='/'>Back to Dashboard</a>
     """
+
+@app.get("/edit_draft/{lead_id}", response_class=HTMLResponse)
+async def edit_draft(request: Request, lead_id: int):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM leads WHERE id = ?", (lead_id,))
+        lead = cursor.fetchone()
+        
+        cursor.execute("SELECT * FROM email_logs WHERE lead_id = ? ORDER BY id DESC LIMIT 1", (lead_id,))
+        draft = cursor.fetchone()
+
+    if not lead or not draft:
+        return "<p>No draft found.</p><a href='/'>Back</a>"
+
+    return render_template("edit_draft.html", request, {"lead": dict(lead), "draft": dict(draft)})
+
+@app.post("/save_draft/{lead_id}")
+async def save_draft(lead_id: int, subject: str = Form(...), body: str = Form(...), action: str = Form(...)):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        
+        # Get the latest draft id
+        cursor.execute("SELECT id FROM email_logs WHERE lead_id = ? ORDER BY id DESC LIMIT 1", (lead_id,))
+        draft = cursor.fetchone()
+        
+        if draft:
+            cursor.execute(\"\"\"
+                UPDATE email_logs 
+                SET subject = ?, body = ?
+                WHERE id = ?
+            \"\"\", (subject, body, draft['id']))
+            
+            if action == 'approve':
+                cursor.execute("UPDATE leads SET status = 'Approved' WHERE id = ?", (lead_id,))
+            else:
+                cursor.execute("UPDATE leads SET status = 'Drafted' WHERE id = ?", (lead_id,))
+            
+            conn.commit()
+
+    return RedirectResponse(url="/", status_code=303)
+
+@app.post("/approve_draft/{lead_id}")
+async def approve_draft(lead_id: int):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE leads SET status = 'Approved' WHERE id = ?", (lead_id,))
+        conn.commit()
+    return RedirectResponse(url="/", status_code=303)
 
 
 @app.get("/fetch-replies-now")
