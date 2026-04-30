@@ -19,6 +19,7 @@
         .badge { padding: 4px 8px; border-radius: 12px; font-size: 12px; color: white; white-space: nowrap; }
         .badge-pending { background-color: #f39c12; }
         .badge-drafted { background-color: #3498db; }
+        .badge-approved { background-color: #1abc9c; }
         .badge-sent { background-color: #9b59b6; }
         .badge-replied { background-color: #2ecc71; }
         
@@ -55,7 +56,7 @@
             </form>
 
             <form action="/send_now" method="post" style="margin: 0;">
-                <button type="submit" class="btn" style="background-color: #e67e22;">Send Drafted Emails Now</button>
+                <button type="submit" class="btn" style="background-color: #e67e22;">Send Approved Emails Now</button>
             </form>
         </div>
     </div>
@@ -91,7 +92,12 @@
                         <button type="submit" class="btn">Generate Draft</button>
                     </form>
                     {% elif lead.status == 'Drafted' %}
-                    <a href="/view_draft/{{ lead.id }}" class="btn btn-success" target="_blank">View Draft</a>
+                    <a href="/edit_draft/{{ lead.id }}" class="btn btn-success">Review & Edit</a>
+                    <form action="/approve_draft/{{ lead.id }}" method="post" style="display:inline;">
+                        <button type="submit" class="btn" style="background-color: #f39c12;">Approve</button>
+                    </form>
+                    {% elif lead.status == 'Approved' %}
+                    <a href="/edit_draft/{{ lead.id }}" class="btn">Edit</a>
                     {% elif lead.status == 'Sent' or lead.status == 'Replied' %}
                     <a href="/view_draft/{{ lead.id }}" class="btn" target="_blank">View Email</a>
                     {% endif %}

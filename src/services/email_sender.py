@@ -178,7 +178,7 @@ def process_email_queue():
             SELECT DISTINCT l.id
             FROM leads l
             JOIN email_logs el ON l.id = el.lead_id
-            WHERE l.status IN ('Drafted', 'Pending')
+            WHERE l.status = 'Approved'
               AND el.sent_at IS NULL
         """)
         pending_leads = cursor.fetchall()

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Draft - VFX Email Outreach CRM</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; color: #333; margin: 0; padding: 20px; }
+        .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; }
+        input[type="text"], textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-family: inherit; font-size: 14px; box-sizing: border-box; }
+        textarea { height: 300px; resize: vertical; }
+        .btn { padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; text-decoration: none; font-size: 14px; display: inline-block; }
+        .btn-primary { background-color: #3498db; color: white; }
+        .btn-success { background-color: #2ecc71; color: white; }
+        .btn-secondary { background-color: #95a5a6; color: white; }
+        .btn:hover { opacity: 0.9; }
+        .actions { display: flex; gap: 10px; margin-top: 20px; }
+        .info-box { background-color: #e8f4f8; padding: 15px; border-radius: 8px; border-left: 4px solid #3498db; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Review & Edit Draft</h2>
+    
+    <div class="info-box">
+        <strong>Lead Information:</strong><br>
+        Name: {{ lead.name }}<br>
+        Company: {{ lead.company }} ({{ lead.role }})<br>
+        Email: {{ lead.email }}<br>
+        Service Needed: {{ lead.service_needed }}
+    </div>
+
+    <form action="/save_draft/{{ lead.id }}" method="post">
+        <div class="form-group">
+            <label for="subject">Subject Line</label>
+            <input type="text" id="subject" name="subject" value="{{ draft.subject }}" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="body">Email Body</label>
+            <textarea id="body" name="body" required>{{ draft.body }}</textarea>
+        </div>
+        
+        <div class="actions">
+            <button type="submit" name="action" value="save" class="btn btn-primary">Save as Draft</button>
+            <button type="submit" name="action" value="approve" class="btn btn-success">Save & Approve</button>
+            <a href="/" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+
+</body>
+</html>

@@ -35,15 +35,15 @@ class _FakeGmailService:
         return self._users_api
 
 
-def _insert_lead_with_draft(email: str = "alice@example.com"):
+def _insert_lead_with_draft(email: str = "alice@example.com", status: str = "Drafted"):
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
             """
             INSERT INTO leads (name, role, company, email, service_needed, status, deal_stage)
-            VALUES (?, ?, ?, ?, ?, 'Drafted', 'Cold')
+            VALUES (?, ?, ?, ?, ?, ?, 'Cold')
             """,
-            ("Alice", "Producer", "Studio A", email, "CGI"),
+            ("Alice", "Producer", "Studio A", email, "CGI", status),
         )
         lead_id = cursor.lastrowid
         cursor.execute(
@@ -90,8 +90,8 @@ def test_send_email_to_lead_marks_lead_sent(monkeypatch):
 
 def test_process_email_queue_calls_sender_for_pending_drafts(monkeypatch):
     lead_ids = [
-        _insert_lead_with_draft("alice1@example.com"),
-        _insert_lead_with_draft("alice2@example.com"),
+        _insert_lead_with_draft("alice1@example.com", "Approved"),
+        _insert_lead_with_draft("alice2@example.com", "Approved"),
     ]
     called_ids = []
 
