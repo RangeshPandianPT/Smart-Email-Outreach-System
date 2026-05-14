@@ -3,6 +3,9 @@ import time
 from src.services.email_sender import process_email_queue, process_followups
 from src.services.inbox_reader import process_inbox
 import atexit
+from src.core.logger import setup_logger
+
+logger = setup_logger("scheduler")
 
 scheduler = BackgroundScheduler()
 
@@ -13,7 +16,7 @@ def _shutdown_scheduler():
 
 def start_scheduler():
     if scheduler.running:
-        print("Scheduler already running; skipping duplicate startup.")
+        logger.info("Scheduler already running; skipping duplicate startup.")
         return
 
     # Job to process inbox every 5 minutes
@@ -50,7 +53,7 @@ def start_scheduler():
     )
 
     scheduler.start()
-    print("Scheduler started. Background tasks are running.")
+    logger.info("Scheduler started. Background tasks are running.")
     
     # Shut down the scheduler when exiting the app
     atexit.register(_shutdown_scheduler)
