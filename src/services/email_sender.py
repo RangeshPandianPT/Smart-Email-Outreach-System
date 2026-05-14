@@ -7,6 +7,9 @@ from src.services.gmail_client import get_gmail_service
 from src.core.database import get_db_connection
 from src.core.config import settings
 from src.services.email_generator import generate_followup_email
+from src.core.logger import setup_logger
+
+logger = setup_logger("email_sender")
 
 
 
@@ -37,7 +40,7 @@ def _send_with_retry(service, msg, max_attempts: int = 3):
                 break
 
             backoff_seconds = min(2 ** attempt, 20) + random.uniform(0.1, 0.9)
-            print(
+            logger.warning(
                 f"Send attempt {attempt}/{max_attempts} failed: {type(e).__name__}: {e}. "
                 f"Retrying in {backoff_seconds:.1f}s..."
             )
@@ -68,7 +71,7 @@ def send_email_to_lead(lead_id: int):
     try:
         service = get_gmail_service()
     except Exception as e:
-        print(f"Failed to initialize Gmail service for lead {lead_id}: {type(e).__name__}: {e}")
+        logger.error(f"Failed to initialize Gmail service for lead {lead_id}: {type(e).__name__}: {e}")
         return False
 
     with get_db_connection() as conn:
@@ -89,18 +92,18 @@ def send_email_to_lead(lead_id: int):
                 """,
                 (limit_msg, lead_id),
             )
-            print(limit_msg)
+            logger.warning(limit_msg)
             return False
 
         cursor.execute("SELECT * FROM leads WHERE id = ?", (lead_id,))
         lead = cursor.fetchone()
 
         if not lead:
-            print(f"Lead {lead_id} not found.")
+            logger.info(f"Lead {lead_id} not found.")
             return False
 
         if lead['status'] in ('Sent', 'Replied'):
-            print(f"Lead {lead_id} already processed.")
+            logger.info(f"Lead {lead_id} already processed.")
             return False
 
         # We assume email_generator has populated the DB, but to keep concerns separated,
@@ -110,7 +113,7 @@ def send_email_to_lead(lead_id: int):
         draft = cursor.fetchone()
 
         if not draft:
-            print(f"No draft found for lead {lead_id}.")
+            logger.info(f"No draft found for lead {lead_id}.")
             return False
 
         try:
@@ -153,7 +156,7 @@ def send_email_to_lead(lead_id: int):
 
             cursor.execute("UPDATE email_logs SET sent_at = CURRENT_TIMESTAMP, message_id = ? WHERE id = ?", (message_id, draft['id']))
 
-            print(f"Sent email to {to_email}. Thread ID: {thread_id}")
+            logger.info(f"Sent email to {to_email}. Thread ID: {thread_id}")
             return True
 
         except Exception as e:
@@ -166,7 +169,7 @@ def send_email_to_lead(lead_id: int):
                 """,
                 (f"{type(e).__name__}: {e}"[:500], lead_id),
             )
-            print(f"Failed to send to {lead['email']}: {type(e).__name__}: {e}")
+            logger.error(f"Failed to send to {lead['email']}: {type(e).__name__}: {e}")
             return False
 
 def process_email_queue():
@@ -184,14 +187,14 @@ def process_email_queue():
         pending_leads = cursor.fetchall()
 
         if not _can_send_more_today(cursor):
-            print(f"Daily send limit reached ({settings.MAX_EMAILS_PER_DAY}). Queue processing skipped.")
+            logger.warning(f"Daily send limit reached ({settings.MAX_EMAILS_PER_DAY}). Queue processing skipped.")
             return
 
     if not pending_leads:
-        print("No pending drafted emails in queue.")
+        logger.info("No pending drafted emails in queue.")
         return
 
-    print(f"Processing email queue for {len(pending_leads)} lead(s).")
+    logger.info(f"Processing email queue for {len(pending_leads)} lead(s).")
 
     for row in pending_leads:
         lead_id = row['id']
