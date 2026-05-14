@@ -13,6 +13,9 @@ from src.services.email_sender import process_email_queue
 from src.services.scheduler import start_scheduler
 from src.services.inbox_reader import process_inbox
 import uvicorn
+from src.core.logger import setup_logger
+
+logger = setup_logger("main")
 
 app = FastAPI(title="VFX Email Outreach System")
 
@@ -180,11 +183,11 @@ async def approve_draft(lead_id: int):
 @app.get("/fetch-replies-now")
 async def fetch_replies_now():
     try:
-        print("Manual reply fetch triggered")
+        logger.info("Manual reply fetch triggered")
         count = process_inbox()
         return {"status": "success", "message": "Replies fetched and updated", "count": count}
     except Exception as e:
-        print(f"Error in manual fetch: {e}")
+        logger.error(f"Error in manual fetch: {e}")
         return {"status": "error", "message": str(e)}
 
 @app.get("/api/replies")
@@ -200,7 +203,7 @@ async def get_replies():
             replies = [dict(row) for row in cursor.fetchall()]
             return replies
         except Exception as e:
-            print("Error fetching replies from DB:", e)
+            logger.error(f"Error fetching replies from DB: {e}")
             return []
 
 @app.post("/upload_csv", response_class=HTMLResponse)
@@ -225,7 +228,7 @@ async def upload_csv(file: UploadFile = File(...)):
         missing_columns = [col for col in required_columns if col not in df_new.columns]
         
         if missing_columns:
-            print("Invalid CSV format: Missing columns")
+            logger.warning("Invalid CSV format: Missing columns")
             return f"<p>Invalid CSV format. Missing required columns: {', '.join(missing_columns)}</p><br><a href='/'>Back</a>"
 
         # 5. Status Column Handling
@@ -245,8 +248,8 @@ async def upload_csv(file: UploadFile = File(...)):
             df_final = df_new
             
         df_final.to_csv(csv_path, index=False)
-        print("CSV uploaded successfully")
-        print("Leads appended to dataset")
+        logger.info("CSV uploaded successfully")
+        logger.info("Leads appended to dataset")
 
         # Sync uploaded rows into SQLite so they appear immediately on dashboard
         imported_count = 0
@@ -257,7 +260,7 @@ async def upload_csv(file: UploadFile = File(...)):
             df_new.to_csv(temp_csv_path, index=False)
             imported_count = import_leads_from_csv(temp_csv_path)
         except Exception as sync_err:
-            print(f"Warning: CSV saved but DB sync failed: {sync_err}")
+            logger.warning(f"CSV saved but DB sync failed: {sync_err}")
         finally:
             if temp_csv_path and os.path.exists(temp_csv_path):
                 os.remove(temp_csv_path)
@@ -270,7 +273,7 @@ async def upload_csv(file: UploadFile = File(...)):
         )
         
     except Exception as e:
-        print(f"Error handling CSV upload: {e}")
+        logger.error(f"Error handling CSV upload: {e}")
         return f"<p>An error occurred matching the CSV format.</p><br><a href='/'>Back</a>"
 
 from src.services.analytics import get_analytics_data, generate_insights
@@ -280,10 +283,10 @@ async def get_analytics():
     try:
         data = get_analytics_data()
         data['insights'] = generate_insights(data)
-        print("Analytics updated")
+        logger.info("Analytics updated")
         return data
     except Exception as e:
-        print(f"Error fetching analytics data: {e}")
+        logger.error(f"Error fetching analytics data: {e}")
         return {"error": str(e)}
 
 if __name__ == "__main__":
