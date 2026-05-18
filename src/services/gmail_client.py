@@ -76,50 +76,61 @@ def _build_flow(credentials_path: str) -> InstalledAppFlow:
     return InstalledAppFlow.from_client_secrets_file(credentials_path, SCOPES)
 
 def get_gmail_service():
-    """
-    Authenticates with Gmail API using OAuth2.
-    On first run, it opens a browser window for you to log in and grant permission.
-    Subsequent runs will use the saved token.json automatically.
-    """
-    creds = _load_token_from_env()
-    token_path = get_token_path()
-    credentials_path = get_credentials_path()
+    creds = None
+    # The file token.json stores the user's access and refresh tokens, and is
+    # created automatically when the authorization flow completes for the first
+    # time.
+    
+    # Use in-memory token from environment if available (for Render, etc.)
+    if settings.GMAIL_TOKEN_JSON:
+        try:
+            creds_info = json.loads(settings.GMAIL_TOKEN_JSON)
+            creds = Credentials.from_authorized_user_info(creds_info, SCOPES)
+        except json.JSONDecodeError:
+            print("Error: GMAIL_TOKEN_JSON is not valid JSON.")
+            return None
 
-    # Load existing token if it exists
-    if not creds and os.path.exists(token_path):
-        creds = Credentials.from_authorized_user_file(token_path, SCOPES)
+    # Fallback to file-based token
+    if not creds and os.path.exists(settings.GMAIL_TOKEN_PATH):
+        creds = Credentials.from_authorized_user_file(settings.GMAIL_TOKEN_PATH, SCOPES)
 
-    # Refresh or re-authenticate if needed
+    # If there are no (valid) credentials available, let the user log in.
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            try:
-                creds.refresh(Request())
-                print("Gmail token refreshed successfully.")
-            except Exception as e:
-                print(f"Token refresh failed: {e}. Re-authenticating...")
-                creds = None
-
-        if not creds:
-            if _is_headless_runtime():
-                raise RuntimeError(
-                    "No valid Gmail token found in headless runtime. "
-                    "Set GMAIL_TOKEN_JSON (preferred) or mount token file and point GMAIL_TOKEN_PATH to it."
+            creds.refresh(Request())
+        else:
+            # Use in-memory credentials from environment if available
+            if settings.GMAIL_CREDENTIALS_JSON:
+                try:
+                    creds_info = json.loads(settings.GMAIL_CREDENTIALS_JSON)
+                    flow = InstalledAppFlow.from_client_config(creds_info, SCOPES)
+                except json.JSONDecodeError:
+                    print("Error: GMAIL_CREDENTIALS_JSON is not valid JSON.")
+                    return None
+            # Fallback to file-based credentials
+            else:
+                if not os.path.exists(settings.GCP_CREDENTIALS_PATH):
+                    raise FileNotFoundError(
+                        f"'{settings.GCP_CREDENTIALS_PATH}' not found. "
+                        "Please provide it or set GMAIL_CREDENTIALS_JSON."
+                    )
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    settings.GCP_CREDENTIALS_PATH, SCOPES
                 )
-
-            print(f"Using credentials from: {credentials_path}")
-            print("Opening browser for Gmail authentication...")
-            flow = _build_flow(credentials_path)
-            creds = flow.run_local_server(port=0, prompt='consent')
-
-        # Save the refreshed/new token for future runs
-        try:
-            os.makedirs(os.path.dirname(token_path), exist_ok=True)
-            with open(token_path, 'w') as token:
-                token.write(creds.to_json())
-            print(f"Token saved to: {token_path}")
-        except OSError as e:
-            # In ephemeral or read-only runtimes, refresh still works for current process.
-            print(f"Warning: could not persist token at '{token_path}': {e}")
+            
+            # In a headless environment, we can't run the local server.
+            if settings.is_headless():
+                raise RuntimeError(
+                    "Gmail token is invalid or expired. In a headless environment, "
+                    "you must provide a valid GMAIL_TOKEN_JSON. "
+                    "Run locally once to generate a token, then set it as an env var."
+                )
+                
+            creds = flow.run_local_server(port=0)
+            
+        # Save the credentials for the next run
+        with open(settings.GMAIL_TOKEN_PATH, 'w') as token:
+            token.write(creds.to_json())
 
     service = build('gmail', 'v1', credentials=creds)
     print("Gmail service connected successfully.")

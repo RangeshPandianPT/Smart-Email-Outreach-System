@@ -21,6 +21,14 @@ class Settings(BaseSettings):
     MIN_DELAY_SECONDS: int = 30
     MAX_DELAY_SECONDS: int = 90
     MAX_EMAILS_PER_DAY: int = 100
+    
+    # Rate limiting (Gmail API safeguards)
+    RATE_LIMIT_PER_SECOND: float = 0.5  # 1 email per 2 seconds
+    RATE_LIMIT_PER_MINUTE: int = 15     # 15 emails per minute
+    RATE_LIMIT_PER_HOUR: int = 100      # 100 emails per hour
+
+    def is_headless(self) -> bool:
+        return self.APP_ENV.lower() in {"production", "prod", "staging"} or os.getenv("RENDER") == "true"
 
     class Config:
         env_file = ".env"

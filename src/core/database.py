@@ -18,10 +18,23 @@ def init_db():
     with get_db_connection() as conn:
         cursor = conn.cursor()
 
+        # Campaigns table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS campaigns (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            description TEXT,
+            status TEXT DEFAULT 'Active',  -- Active, Paused, Archived
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
+
         # Leads table
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS leads (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            campaign_id INTEGER,
             name TEXT,
             role TEXT,
             company TEXT,
@@ -34,9 +47,16 @@ def init_db():
             reply_text TEXT,
             reply_status TEXT,
             reply_timestamp TIMESTAMP,
-            last_message_id TEXT
+            last_message_id TEXT,
+            FOREIGN KEY(campaign_id) REFERENCES campaigns(id)
         )
         ''')
+
+        # Add campaign_id column to existing table safely
+        try:
+            cursor.execute("ALTER TABLE leads ADD COLUMN campaign_id INTEGER")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
 
         # Add new columns to existing table safely 
         for col in [
@@ -80,6 +100,15 @@ def init_db():
             error TEXT,
             processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(lead_id) REFERENCES leads(id)
+        )
+        ''')
+
+        # Migration tracking for future use
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS migrations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         ''')
         

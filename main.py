@@ -12,13 +12,11 @@ from src.services.email_generator import generate_cold_email, generate_subject_l
 from src.services.email_sender import process_email_queue
 from src.services.scheduler import start_scheduler
 from src.services.inbox_reader import process_inbox
+from src.core.validation import validate_gmail_credentials
 import uvicorn
 from src.core.logger import setup_logger
 
 logger = setup_logger("main")
-
-app = FastAPI(title="VFX Email Outreach System")
-
 # Ensure template directory exists
 os.makedirs("templates", exist_ok=True)
 templates = Jinja2Templates(directory="templates")
@@ -36,6 +34,8 @@ def render_template(name: str, request: Request, context: dict):
 @app.on_event("startup")
 def on_startup():
     init_db()
+    if not validate_gmail_credentials():
+        logger.critical("Gmail credential validation failed. Application might not work as expected.")
     start_scheduler()
 
 @app.get("/", response_class=HTMLResponse)
