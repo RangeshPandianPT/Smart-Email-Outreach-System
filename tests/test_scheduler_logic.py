@@ -3,8 +3,8 @@ from datetime import datetime, timedelta
 from src.core.database import get_db_connection
 
 # A simple test to verify database queries for scheduler 
-def test_followup_logic_query(setup_database):
-    # setup_database is assumed to be a fixture from conftest.py
+def test_followup_logic_query():
+    # The database is already isolated via the autouse fixture in conftest.py
     with get_db_connection() as conn:
         cursor = conn.cursor()
         

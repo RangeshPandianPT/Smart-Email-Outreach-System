@@ -29,6 +29,15 @@ def _can_send_more_today(cursor) -> bool:
     return _emails_sent_today(cursor) < settings.MAX_EMAILS_PER_DAY
 
 
+from src.services.rate_limiter import RateLimiter
+from src.core.logger import setup_logger
+
+logger = setup_logger("email_sender")
+
+# Apply rate limiters to the send function
+@RateLimiter(max_calls=settings.RATE_LIMIT_PER_HOUR, period_seconds=3600)
+@RateLimiter(max_calls=settings.RATE_LIMIT_PER_MINUTE, period_seconds=60)
+@RateLimiter(max_calls=1, period_seconds=1.0/settings.RATE_LIMIT_PER_SECOND)
 def _send_with_retry(service, msg, max_attempts: int = 3):
     last_error = None
     for attempt in range(1, max_attempts + 1):
