@@ -1,0 +1,4 @@
+Alembic is a lightweight database migration tool for usage with the
+SQLAlchemy Database Toolkit for Python.
+
+This is a generic script for running Alembic migrations.
