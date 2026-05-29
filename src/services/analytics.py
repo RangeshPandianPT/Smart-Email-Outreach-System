@@ -20,6 +20,8 @@ def get_analytics_data():
         interested = breakdown.get('Interested', 0)
         not_interested = breakdown.get('Not Interested', 0)
         meeting_requests = breakdown.get('Meeting Request', 0)
+        bounces = breakdown.get('Bounce', 0)
+        ooo = breakdown.get('Out of Office', 0)
         
         # Conversion rate
         conversion_rate = 0.0
@@ -46,6 +48,8 @@ def get_analytics_data():
             "interested": interested,
             "not_interested": not_interested,
             "meeting_requests": meeting_requests,
+            "bounces": bounces,
+            "out_of_office": ooo,
             "conversion_rate": conversion_rate,
             "avg_response_time_hours": avg_response_time_hours
         }

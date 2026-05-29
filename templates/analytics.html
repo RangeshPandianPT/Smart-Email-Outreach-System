@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Analytics Dashboard</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        .card { border: 1px solid #ccc; padding: 15px; margin: 10px; border-radius: 5px; display: inline-block; min-width: 150px; text-align: center; }
+        .card h3 { margin-top: 0; }
+        .insights { background: #f9f9f9; padding: 15px; margin-top: 20px; border-left: 4px solid #007bff; }
+    </style>
+</head>
+<body>
+    <h1>Analytics Dashboard</h1>
+    <a href="/">Back to Home</a>
+    
+    <div>
+        <div class="card">
+            <h3>Total Sent</h3>
+            <h2>{{ data.total_sent }}</h2>
+        </div>
+        <div class="card">
+            <h3>Total Replies</h3>
+            <h2>{{ data.total_replies }}</h2>
+        </div>
+        <div class="card">
+            <h3>Conversion Rate</h3>
+            <h2>{{ data.conversion_rate }}%</h2>
+        </div>
+        <div class="card">
+            <h3>Avg Response</h3>
+            <h2>{{ data.avg_response_time_hours }} hrs</h2>
+        </div>
+    </div>
+    
+    <h2>Reply Breakdown</h2>
+    <ul>
+        <li>Interested: {{ data.interested }}</li>
+        <li>Meeting Requests: {{ data.meeting_requests }}</li>
+        <li>Not Interested: {{ data.not_interested }}</li>
+        <li>Bounces: {{ data.bounces }}</li>
+        <li>Out of Office: {{ data.out_of_office }}</li>
+    </ul>
+
+    <div class="insights">
+        <h3>AI Insights</h3>
+        <ul>
+            {% for insight in data.insights %}
+            <li>{{ insight }}</li>
+            {% else %}
+            <li>No insights available.</li>
+            {% endfor %}
+        </ul>
+    </div>
+</body>
+</html>

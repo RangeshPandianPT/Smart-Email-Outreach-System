@@ -10,13 +10,15 @@ from src.core.config import settings
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 HEADERS = {"Authorization": f"Bearer {settings.GROQ_API_KEY}"}
 
-LABELS = ["Interested", "Not Interested", "Meeting Request", "Neutral"]
+LABELS = ["Interested", "Not Interested", "Meeting Request", "Neutral", "Bounce", "Out of Office"]
 
 # Keyword fallback mapping
 _KEYWORDS = {
     "Meeting Request": ["schedule", "call", "meeting", "calendar", "available", "book", "zoom", "teams", "let's talk"],
     "Not Interested": ["not interested", "unsubscribe", "remove", "stop", "don't contact", "no thank", "opt out"],
     "Interested": ["tell me more", "sounds good", "interested", "portfolio", "pricing", "rates", "love to", "would like"],
+    "Bounce": ["postmaster", "mailer-daemon", "delivery failed", "undeliverable", "address not found", "user unknown", "bounced"],
+    "Out of Office": ["out of office", "out of the office", "vacation", "away from my desk", "ooo", "auto-reply", "auto reply", "automated response"],
 }
 
 
