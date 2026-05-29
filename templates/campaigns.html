@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Campaign Management</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+    </style>
+</head>
+<body>
+    <h1>Campaigns</h1>
+    <a href="/">Back to Dashboard</a>
+    
+    <h2>Create New Campaign</h2>
+    <form action="/campaigns/create" method="post">
+        <label>Name:</label>
+        <input type="text" name="name" required>
+        <button type="submit">Create</button>
+    </form>
+
+    <h2>Existing Campaigns</h2>
+    <table>
+        <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Created At</th>
+        </tr>
+        {% for c in campaigns %}
+        <tr>
+            <td>{{ c.id }}</td>
+            <td>{{ c.name }}</td>
+            <td>{{ c.created_at }}</td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="3">No campaigns found.</td>
+        </tr>
+        {% endfor %}
+    </table>
+</body>
+</html>

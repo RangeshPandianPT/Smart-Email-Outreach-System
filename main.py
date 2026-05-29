@@ -289,5 +289,37 @@ async def get_analytics():
         logger.error(f"Error fetching analytics data: {e}")
         return {"error": str(e)}
 
+@app.get("/campaigns", response_class=HTMLResponse)
+async def view_campaigns(request: Request):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT * FROM campaigns ORDER BY id DESC")
+            campaigns = [dict(c) for c in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"Failed to fetch campaigns: {e}")
+            campaigns = []
+    return render_template("campaigns.html", request, {"campaigns": campaigns})
+
+@app.post("/campaigns/create")
+async def create_campaign(name: str = Form(...)):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute("INSERT INTO campaigns (name) VALUES (?)", (name,))
+            conn.commit()
+        except Exception as e:
+            logger.error(f"Error creating campaign: {e}")
+    return RedirectResponse(url="/campaigns", status_code=303)
+
+@app.get("/dashboard/analytics", response_class=HTMLResponse)
+async def view_analytics(request: Request):
+    try:
+        data = get_analytics_data()
+        data['insights'] = generate_insights(data)
+        return render_template("analytics.html", request, {"data": data})
+    except Exception as e:
+        return f"Error loading analytics: {e}"
+
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
