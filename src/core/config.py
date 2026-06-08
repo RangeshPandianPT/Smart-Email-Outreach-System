@@ -31,9 +31,10 @@ class Settings(BaseSettings):
     def is_headless(self) -> bool:
         return self.APP_ENV.lower() in {"production", "prod", "staging"} or os.getenv("RENDER") == "true"
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        extra = "ignore"
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "extra": "ignore"
+    }
 
 settings = Settings()
