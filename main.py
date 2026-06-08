@@ -21,6 +21,7 @@ logger = setup_logger("main")
 os.makedirs("templates", exist_ok=True)
 templates = Jinja2Templates(directory="templates")
 
+app = FastAPI()
 
 def render_template(name: str, request: Request, context: dict):
     merged_context = {"request": request, **context}
@@ -156,11 +157,11 @@ async def save_draft(lead_id: int, subject: str = Form(...), body: str = Form(..
         draft = cursor.fetchone()
         
         if draft:
-            cursor.execute(\"\"\"
+            cursor.execute("""
                 UPDATE email_logs 
                 SET subject = ?, body = ?
                 WHERE id = ?
-            \"\"\", (subject, body, draft['id']))
+            """, (subject, body, draft['id']))
             
             if action == 'approve':
                 cursor.execute("UPDATE leads SET status = 'Approved' WHERE id = ?", (lead_id,))
