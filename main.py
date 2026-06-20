@@ -22,6 +22,7 @@ os.makedirs("templates", exist_ok=True)
 templates = Jinja2Templates(directory="templates")
 
 app = FastAPI()
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 def render_template(name: str, request: Request, context: dict):
     merged_context = {"request": request, **context}
