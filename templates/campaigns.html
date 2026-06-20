@@ -1,43 +1,65 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Campaign Management</title>
-    <style>
-        body { font-family: sans-serif; padding: 20px; }
-        table { border-collapse: collapse; width: 100%; margin-top: 20px; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; }
-    </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Campaign Management - VFX Email Outreach CRM</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    <h1>Campaigns</h1>
-    <a href="/">Back to Dashboard</a>
+<div class="container">
+    <div class="header" style="text-align: left; margin-bottom: 20px;">
+        <div class="flex justify-between align-center">
+            <h1>🎯 Campaign Management</h1>
+            <a href="/" class="btn btn-secondary">← Back to Dashboard</a>
+        </div>
+        <p style="color: var(--text-muted);">Create and manage your email outreach campaigns.</p>
+    </div>
     
-    <h2>Create New Campaign</h2>
-    <form action="/campaigns/create" method="post">
-        <label>Name:</label>
-        <input type="text" name="name" required>
-        <button type="submit">Create</button>
-    </form>
+    <div class="card">
+        <h2 class="mb-20">Create New Campaign</h2>
+        <form action="/campaigns/create" method="post" class="flex gap-10 align-center">
+            <div class="form-group" style="margin-bottom: 0; flex-grow: 1;">
+                <input type="text" name="name" placeholder="Enter campaign name (e.g., Q3 Animation Outreach)" required>
+            </div>
+            <button type="submit" class="btn btn-success">Create Campaign</button>
+        </form>
+    </div>
 
-    <h2>Existing Campaigns</h2>
-    <table>
-        <tr>
-            <th>ID</th>
-            <th>Name</th>
-            <th>Created At</th>
-        </tr>
-        {% for c in campaigns %}
-        <tr>
-            <td>{{ c.id }}</td>
-            <td>{{ c.name }}</td>
-            <td>{{ c.created_at }}</td>
-        </tr>
-        {% else %}
-        <tr>
-            <td colspan="3">No campaigns found.</td>
-        </tr>
-        {% endfor %}
-    </table>
+    <div class="card" style="padding: 0;">
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Campaign Name</th>
+                        <th>Created At</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in campaigns %}
+                    <tr>
+                        <td style="color: var(--text-muted);">#{{ c.id }}</td>
+                        <td><strong style="font-size: 1.05rem;">{{ c.name }}</strong></td>
+                        <td style="color: var(--text-muted);">{{ c.created_at }}</td>
+                        <td>
+                            <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;">View Details</button>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="4" style="text-align:center; padding: 40px; color: var(--text-muted);">
+                            <div style="font-size: 2rem; margin-bottom: 10px;">📋</div>
+                            No campaigns found. Create one above to get started.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
 </body>
 </html>
