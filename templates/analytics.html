@@ -1,55 +1,151 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Analytics Dashboard</title>
-    <style>
-        body { font-family: sans-serif; padding: 20px; }
-        .card { border: 1px solid #ccc; padding: 15px; margin: 10px; border-radius: 5px; display: inline-block; min-width: 150px; text-align: center; }
-        .card h3 { margin-top: 0; }
-        .insights { background: #f9f9f9; padding: 15px; margin-top: 20px; border-left: 4px solid #007bff; }
-    </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analytics Dashboard - VFX Email Outreach CRM</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-    <h1>Analytics Dashboard</h1>
-    <a href="/">Back to Home</a>
+<div class="container">
+    <div class="header" style="text-align: left; margin-bottom: 30px;">
+        <div class="flex justify-between align-center">
+            <h1>📊 Full Analytics Dashboard</h1>
+            <a href="/" class="btn btn-secondary">← Back to Home</a>
+        </div>
+        <p style="color: var(--text-muted);">Deep dive into your outreach performance and AI insights.</p>
+    </div>
     
-    <div>
-        <div class="card">
-            <h3>Total Sent</h3>
-            <h2>{{ data.total_sent }}</h2>
+    <div class="stats-grid mb-40">
+        <div class="stat-card">
+            <h4>Total Sent</h4>
+            <div class="stat-value" style="color: #60A5FA;">{{ data.total_sent }}</div>
         </div>
-        <div class="card">
-            <h3>Total Replies</h3>
-            <h2>{{ data.total_replies }}</h2>
+        <div class="stat-card">
+            <h4>Total Replies</h4>
+            <div class="stat-value" style="color: #34D399;">{{ data.total_replies }}</div>
         </div>
-        <div class="card">
-            <h3>Conversion Rate</h3>
-            <h2>{{ data.conversion_rate }}%</h2>
+        <div class="stat-card">
+            <h4>Conversion Rate</h4>
+            <div class="stat-value" style="color: #A78BFA;">{{ data.conversion_rate }}%</div>
         </div>
-        <div class="card">
-            <h3>Avg Response</h3>
-            <h2>{{ data.avg_response_time_hours }} hrs</h2>
+        <div class="stat-card">
+            <h4>Avg Response</h4>
+            <div class="stat-value" style="color: #F472B6;">{{ data.avg_response_time_hours }} hrs</div>
         </div>
     </div>
     
-    <h2>Reply Breakdown</h2>
-    <ul>
-        <li>Interested: {{ data.interested }}</li>
-        <li>Meeting Requests: {{ data.meeting_requests }}</li>
-        <li>Not Interested: {{ data.not_interested }}</li>
-        <li>Bounces: {{ data.bounces }}</li>
-        <li>Out of Office: {{ data.out_of_office }}</li>
-    </ul>
+    <div class="charts-container" style="grid-template-columns: 1fr 1fr; margin-bottom: 30px;">
+        <div class="chart-box">
+            <h3 class="mb-20">Reply Breakdown</h3>
+            <div style="height: 300px; display: flex; justify-content: center;">
+                <canvas id="replyBreakdownChart"></canvas>
+            </div>
+        </div>
+        
+        <div class="card insights-box" style="margin-bottom: 0;">
+            <h3 class="mb-20">🧠 AI Insights</h3>
+            <ul class="insights-list">
+                {% for insight in data.insights %}
+                <li>{{ insight }}</li>
+                {% else %}
+                <li style="color: var(--text-muted)">No active insights yet. Ensure you have enough data for the AI to analyze.</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
 
-    <div class="insights">
-        <h3>AI Insights</h3>
-        <ul>
-            {% for insight in data.insights %}
-            <li>{{ insight }}</li>
-            {% else %}
-            <li>No insights available.</li>
-            {% endfor %}
-        </ul>
+    <div class="card">
+        <h3 class="mb-20">Detailed Reply Metrics</h3>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Category</th>
+                        <th>Count</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><span class="stage-badge stage-Interested">Interested</span></td>
+                        <td>{{ data.interested }}</td>
+                        <td>Positive</td>
+                    </tr>
+                    <tr>
+                        <td><span class="stage-badge stage-Meeting">Meeting Requests</span></td>
+                        <td>{{ data.meeting_requests }}</td>
+                        <td>High Intent</td>
+                    </tr>
+                    <tr>
+                        <td><span class="stage-badge stage-Not-Interested">Not Interested</span></td>
+                        <td>{{ data.not_interested }}</td>
+                        <td>Negative</td>
+                    </tr>
+                    <tr>
+                        <td><span class="stage-badge stage-Neutral">Neutral / Other</span></td>
+                        <td>{{ data.total_replies - (data.interested + data.meeting_requests + data.not_interested + data.bounces + data.out_of_office) }}</td>
+                        <td>Pending Review</td>
+                    </tr>
+                    <tr>
+                        <td><span class="badge" style="background-color: rgba(239, 68, 68, 0.2); color: #F87171;">Bounces</span></td>
+                        <td>{{ data.bounces }}</td>
+                        <td>Needs Attention</td>
+                    </tr>
+                    <tr>
+                        <td><span class="badge" style="background-color: rgba(148, 163, 184, 0.2); color: #CBD5E1;">Out of Office</span></td>
+                        <td>{{ data.out_of_office }}</td>
+                        <td>Follow Up Later</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
     </div>
+</div>
+
+<script>
+    // Initialize Chart.js for Reply Breakdown
+    const ctx = document.getElementById('replyBreakdownChart').getContext('2d');
+    Chart.defaults.color = '#94A3B8';
+    Chart.defaults.font.family = 'Inter';
+    
+    new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Interested', 'Meeting Requests', 'Not Interested', 'Bounces', 'Out of Office'],
+            datasets: [{
+                data: [
+                    {{ data.interested }},
+                    {{ data.meeting_requests }},
+                    {{ data.not_interested }},
+                    {{ data.bounces }},
+                    {{ data.out_of_office }}
+                ],
+                backgroundColor: [
+                    'rgba(52, 211, 153, 0.8)', // Interested
+                    'rgba(96, 165, 250, 0.8)', // Meeting
+                    'rgba(239, 68, 68, 0.8)',  // Not Interested
+                    'rgba(245, 158, 11, 0.8)', // Bounces
+                    'rgba(148, 163, 184, 0.8)' // OOO
+                ],
+                borderWidth: 0,
+                hoverOffset: 4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'right',
+                    labels: { color: '#F8FAFC', padding: 20 }
+                }
+            },
+            cutout: '70%'
+        }
+    });
+</script>
 </body>
 </html>
