@@ -4,11 +4,8 @@ classifier.py
 Classifies email reply text into one of four categories using
 Groq LLM API. Falls back to keyword matching.
 """
-import requests
 from src.core.config import settings
-
-GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-HEADERS = {"Authorization": f"Bearer {settings.GROQ_API_KEY}"}
+from src.services.llm_factory import generate_completion
 
 LABELS = ["Interested", "Not Interested", "Meeting Request", "Neutral", "Bounce", "Out of Office"]
 
@@ -25,7 +22,7 @@ _KEYWORDS = {
 def classify_reply(email_text: str) -> str:
     """
     Classifies a reply email into: Interested, Not Interested, Meeting Request, or Neutral.
-    Uses Groq LLM classification first, then keyword fallback.
+    Uses LLM classification first, then keyword fallback.
     """
     # Truncate to 512 chars for the model
     truncated = email_text[:512].strip()
@@ -36,21 +33,12 @@ def classify_reply(email_text: str) -> str:
             f"Reply:\n{truncated}\n"
             f"Output ONLY the label, nothing else."
         )
-        payload = {
-            "model": "llama3-8b-8192",
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.0,
-            "max_tokens": 10,
-        }
-        resp = requests.post(GROQ_API_URL, headers=HEADERS, json=payload, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
+        best_label = generate_completion(prompt, max_tokens=10, temperature=0.0)
 
-        if "choices" in data and len(data["choices"]) > 0:
-            best_label = data["choices"][0]["message"]["content"].strip()
+        if best_label:
             for label in LABELS:
                 if label.lower() in best_label.lower():
-                    print(f"  Classification: '{label}' (Groq)")
+                    print(f"  Classification: '{label}' (LLM)")
                     return label
 
     except Exception as e:

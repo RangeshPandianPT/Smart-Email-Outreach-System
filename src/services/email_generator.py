@@ -4,12 +4,9 @@ email_generator.py
 Uses Groq API (Llama 3 8B) to generate personalized cold emails.
 Falls back to a strong template if the API fails.
 """
-import requests
 import random
 from src.core.config import settings
-
-GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-HEADERS = {"Authorization": f"Bearer {settings.GROQ_API_KEY}"}
+from src.services.llm_factory import generate_completion
 
 # Small pool of style tweaks to keep each email slightly unique
 _OPENERS = [
@@ -19,25 +16,8 @@ _OPENERS = [
     "Just a short intro from our side.",
 ]
 
-
 def _groq_generate(prompt: str, max_tokens: int = 180) -> str:
-    payload = {
-        "model": "llama3-8b-8192",
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": max_tokens,
-        "temperature": 0.75,
-    }
-    try:
-        resp = requests.post(GROQ_API_URL, headers=HEADERS, json=payload, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-        if "choices" in data and len(data["choices"]) > 0:
-            return data["choices"][0]["message"]["content"].strip()
-    except requests.exceptions.HTTPError as e:
-        print(f"Groq API error: {e}")
-    except Exception as e:
-        print(f"Groq request failed: {e}")
-    return ""
+    return generate_completion(prompt, max_tokens=max_tokens)
 
 
 def _fallback_email(lead) -> str:
