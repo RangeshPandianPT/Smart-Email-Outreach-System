@@ -92,6 +92,15 @@ To start the main application or scheduling daemon:
 python main.py
 ```
 
+To use the new dashboard UI locally, start the backend and then run the frontend:
+
+```bash
+python main.py
+cd frontend
+npm install
+npm run dev
+```
+
 ## ✅ Running Tests
 
 Run the automated test suite locally:
