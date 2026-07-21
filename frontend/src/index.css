@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-brand-dark text-slate-200 antialiased font-sans;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-brand-accent hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition-all duration-200 ease-in-out transform hover:-translate-y-0.5;
+  }
+  .card {
+    @apply bg-brand-surface rounded-xl border border-slate-700 shadow-xl overflow-hidden;
+  }
+}
