@@ -3,6 +3,7 @@ import pandas as pd
 import io
 import tempfile
 from fastapi import FastAPI, Request, Form, BackgroundTasks, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -22,6 +23,13 @@ os.makedirs("templates", exist_ok=True)
 templates = Jinja2Templates(directory="templates")
 
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Replace with ["http://localhost:5173"] in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 def render_template(name: str, request: Request, context: dict):
@@ -50,6 +58,14 @@ async def read_root(request: Request):
         leads = [dict(lead) for lead in leads_raw]
         
     return render_template("index.html", request, {"leads": leads})
+
+@app.get("/api/leads")
+async def get_all_leads():
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM leads ORDER BY id DESC")
+        leads_raw = cursor.fetchall()
+        return [dict(lead) for lead in leads_raw]
 
 @app.post("/import")
 async def import_leads(file_path: str = Form("data/sample_leads.csv")):
@@ -279,6 +295,64 @@ async def upload_csv(file: UploadFile = File(...)):
         return f"<p>An error occurred matching the CSV format.</p><br><a href='/'>Back</a>"
 
 from src.services.analytics import get_analytics_data, generate_insights
+
+
+def _normalize_lead(row):
+    if isinstance(row, dict):
+        return row
+    return {
+        "id": row[0],
+        "name": row[1],
+        "role": row[2],
+        "company": row[3],
+        "email": row[4],
+        "service_needed": row[5],
+        "status": row[6],
+        "deal_stage": row[7],
+        "thread_id": row[8],
+        "last_updated": row[9],
+        "reply_text": row[10],
+        "reply_status": row[11],
+        "reply_timestamp": row[12],
+        "last_message_id": row[13],
+        "email_sent_timestamp": row[14],
+        "followup_count": row[15],
+        "last_followup_timestamp": row[16],
+        "send_attempts": row[17],
+        "last_send_attempt_timestamp": row[18],
+        "last_send_error": row[19],
+    }
+
+
+@app.get("/api/health")
+async def health_check():
+    return {"status": "ok", "service": "smart-email-outreach"}
+
+
+@app.get("/api/dashboard")
+async def get_dashboard_data():
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM leads ORDER BY id DESC")
+            leads = [_normalize_lead(row) for row in cursor.fetchall()]
+
+        analytics = get_analytics_data()
+        analytics["insights"] = generate_insights(analytics)
+
+        summary = {
+            "total_leads": len(leads),
+            "pending_leads": sum(1 for lead in leads if lead.get("status") == "Pending"),
+            "drafted_leads": sum(1 for lead in leads if lead.get("status") == "Drafted"),
+            "sent_leads": sum(1 for lead in leads if lead.get("status") == "Sent"),
+            "replied_leads": sum(1 for lead in leads if lead.get("status") == "Replied"),
+        }
+
+        return {"leads": leads, "summary": summary, "analytics": analytics}
+    except Exception as exc:
+        logger.error(f"Error fetching dashboard data: {exc}")
+        return {"leads": [], "summary": {}, "analytics": {}, "error": str(exc)}
+
 
 @app.get("/api/analytics")
 async def get_analytics():
