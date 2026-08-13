@@ -4,8 +4,7 @@ import io
 import tempfile
 from fastapi import FastAPI, Request, Form, BackgroundTasks, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from src.core.database import get_db_connection, init_db
 from src.services.lead_reader import import_leads_from_csv
@@ -18,10 +17,6 @@ import uvicorn
 from src.core.logger import setup_logger
 
 logger = setup_logger("main")
-# Ensure template directory exists
-os.makedirs("templates", exist_ok=True)
-templates = Jinja2Templates(directory="templates")
-
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
@@ -32,15 +27,6 @@ app.add_middleware(
 )
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-def render_template(name: str, request: Request, context: dict):
-    merged_context = {"request": request, **context}
-    try:
-        # Newer Starlette versions prefer explicit request/name/context parameters.
-        return templates.TemplateResponse(request=request, name=name, context=merged_context)
-    except TypeError:
-        # Older Starlette versions expect (name, context) with request inside context.
-        return templates.TemplateResponse(name, merged_context)
-
 @app.on_event("startup")
 def on_startup():
     init_db()
@@ -48,16 +34,9 @@ def on_startup():
         logger.critical("Gmail credential validation failed. Application might not work as expected.")
     start_scheduler()
 
-@app.get("/", response_class=HTMLResponse)
-async def read_root(request: Request):
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM leads ORDER BY id DESC")
-        leads_raw = cursor.fetchall()
-        
-        leads = [dict(lead) for lead in leads_raw]
-        
-    return render_template("index.html", request, {"leads": leads})
+@app.get("/")
+async def read_root():
+    return {"status": "ok", "message": "Smart Email Outreach System API is running."}
 
 @app.get("/api/leads")
 async def get_all_leads():
@@ -67,7 +46,7 @@ async def get_all_leads():
         leads_raw = cursor.fetchall()
         return [dict(lead) for lead in leads_raw]
 
-@app.post("/import")
+@app.post("/api/import")
 async def import_leads(file_path: str = Form("data/sample_leads.csv")):
     resolved_path = file_path.strip()
     if not os.path.isabs(resolved_path) and not os.path.exists(resolved_path):
@@ -76,9 +55,9 @@ async def import_leads(file_path: str = Form("data/sample_leads.csv")):
             resolved_path = fallback_path
 
     import_leads_from_csv(resolved_path)
-    return RedirectResponse(url="/", status_code=303)
+    return {"status": "success", "message": "Leads imported successfully"}
 
-@app.post("/generate/{lead_id}")
+@app.post("/api/generate/{lead_id}")
 async def generate_email(lead_id: int, background_tasks: BackgroundTasks):
     draft_created = False
     with get_db_connection() as conn:
@@ -98,10 +77,11 @@ async def generate_email(lead_id: int, background_tasks: BackgroundTasks):
                 
                 cursor.execute("UPDATE leads SET status = 'Drafted' WHERE id = ?", (lead_id,))
                 draft_created = True
+                conn.commit()
 
-    return RedirectResponse(url="/", status_code=303)
+    return {"status": "success", "draft_created": draft_created}
 
-@app.post("/generate_all")
+@app.post("/api/generate_all")
 async def generate_all_pending(background_tasks: BackgroundTasks):
     def _generate_all():
         drafted_any = False
@@ -124,47 +104,28 @@ async def generate_all_pending(background_tasks: BackgroundTasks):
                     conn.commit() # commit each to show progress
 
     background_tasks.add_task(_generate_all)
-    return RedirectResponse(url="/", status_code=303)
+    return {"status": "success", "message": "Background generation started"}
 
 
-@app.post("/send_now")
+@app.post("/api/send_now")
 async def send_now(background_tasks: BackgroundTasks):
     background_tasks.add_task(process_email_queue)
-    return RedirectResponse(url="/", status_code=303)
+    return {"status": "success", "message": "Email queue processing started"}
 
-@app.get("/view_draft/{lead_id}", response_class=HTMLResponse)
-async def view_draft(request: Request, lead_id: int):
+@app.get("/api/draft/{lead_id}")
+async def get_draft(lead_id: int):
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM email_logs WHERE lead_id = ? ORDER BY id DESC LIMIT 1", (lead_id,))
         draft = cursor.fetchone()
 
     if not draft:
-        return "<p>No draft found.</p><a href='/'>Back</a>"
+        return JSONResponse(status_code=404, content={"message": "No draft found."})
 
-    return f"""
-    <h2>Subject: {draft['subject']}</h2>
-    <hr>
-    <pre style='white-space: pre-wrap; font-family: sans-serif;'>{draft['body']}</pre>
-    <br><a href='/'>Back to Dashboard</a>
-    """
+    return dict(draft)
 
-@app.get("/edit_draft/{lead_id}", response_class=HTMLResponse)
-async def edit_draft(request: Request, lead_id: int):
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM leads WHERE id = ?", (lead_id,))
-        lead = cursor.fetchone()
-        
-        cursor.execute("SELECT * FROM email_logs WHERE lead_id = ? ORDER BY id DESC LIMIT 1", (lead_id,))
-        draft = cursor.fetchone()
 
-    if not lead or not draft:
-        return "<p>No draft found.</p><a href='/'>Back</a>"
-
-    return render_template("edit_draft.html", request, {"lead": dict(lead), "draft": dict(draft)})
-
-@app.post("/save_draft/{lead_id}")
+@app.post("/api/draft/{lead_id}")
 async def save_draft(lead_id: int, subject: str = Form(...), body: str = Form(...), action: str = Form(...)):
     with get_db_connection() as conn:
         cursor = conn.cursor()
@@ -187,15 +148,15 @@ async def save_draft(lead_id: int, subject: str = Form(...), body: str = Form(..
             
             conn.commit()
 
-    return RedirectResponse(url="/", status_code=303)
+    return {"status": "success", "message": f"Draft saved and set to {action}"}
 
-@app.post("/approve_draft/{lead_id}")
+@app.post("/api/approve_draft/{lead_id}")
 async def approve_draft(lead_id: int):
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("UPDATE leads SET status = 'Approved' WHERE id = ?", (lead_id,))
         conn.commit()
-    return RedirectResponse(url="/", status_code=303)
+    return {"status": "success", "message": "Draft approved"}
 
 
 @app.get("/fetch-replies-now")
@@ -224,19 +185,19 @@ async def get_replies():
             logger.error(f"Error fetching replies from DB: {e}")
             return []
 
-@app.post("/upload_csv", response_class=HTMLResponse)
+@app.post("/api/upload_csv")
 async def upload_csv(file: UploadFile = File(...)):
     """
     Handle CSV uploads, validate format, append to existing dataset,
     and save back for backend worker processes to pick up.
     """
     if not file.filename.endswith(".csv"):
-        return "<p>Invalid file type. Please upload a .csv file.</p><br><a href='/'>Back</a>"
+        return JSONResponse(status_code=400, content={"message": "Invalid file type. Please upload a .csv file."})
 
     try:
         content = await file.read()
         if not content:
-            return "<p>File is empty.</p><br><a href='/'>Back</a>"
+            return JSONResponse(status_code=400, content={"message": "File is empty."})
             
         # Parse with Pandas
         df_new = pd.read_csv(io.StringIO(content.decode('utf-8')))
@@ -247,7 +208,7 @@ async def upload_csv(file: UploadFile = File(...)):
         
         if missing_columns:
             logger.warning("Invalid CSV format: Missing columns")
-            return f"<p>Invalid CSV format. Missing required columns: {', '.join(missing_columns)}</p><br><a href='/'>Back</a>"
+            return JSONResponse(status_code=400, content={"message": f"Invalid CSV format. Missing required columns: {', '.join(missing_columns)}"})
 
         # 5. Status Column Handling
         if 'Status' not in df_new.columns:
@@ -284,15 +245,14 @@ async def upload_csv(file: UploadFile = File(...)):
                 os.remove(temp_csv_path)
         
         # Provide success message and lead count
-        return (
-            f"<p>Successfully uploaded {len(df_new)} leads to CSV. "
-            f"Imported {imported_count} new leads into dashboard.</p>"
-            "<br><a href='/'>Back to Dashboard</a>"
-        )
+        return {
+            "status": "success",
+            "message": f"Successfully uploaded {len(df_new)} leads to CSV. Imported {imported_count} new leads into dashboard."
+        }
         
     except Exception as e:
         logger.error(f"Error handling CSV upload: {e}")
-        return f"<p>An error occurred matching the CSV format.</p><br><a href='/'>Back</a>"
+        return JSONResponse(status_code=500, content={"message": "An error occurred matching the CSV format."})
 
 from src.services.analytics import get_analytics_data, generate_insights
 
@@ -365,8 +325,8 @@ async def get_analytics():
         logger.error(f"Error fetching analytics data: {e}")
         return {"error": str(e)}
 
-@app.get("/campaigns", response_class=HTMLResponse)
-async def view_campaigns(request: Request):
+@app.get("/api/campaigns")
+async def view_campaigns():
     with get_db_connection() as conn:
         cursor = conn.cursor()
         try:
@@ -375,9 +335,9 @@ async def view_campaigns(request: Request):
         except Exception as e:
             logger.error(f"Failed to fetch campaigns: {e}")
             campaigns = []
-    return render_template("campaigns.html", request, {"campaigns": campaigns})
+    return campaigns
 
-@app.post("/campaigns/create")
+@app.post("/api/campaigns/create")
 async def create_campaign(name: str = Form(...)):
     with get_db_connection() as conn:
         cursor = conn.cursor()
@@ -386,16 +346,8 @@ async def create_campaign(name: str = Form(...)):
             conn.commit()
         except Exception as e:
             logger.error(f"Error creating campaign: {e}")
-    return RedirectResponse(url="/campaigns", status_code=303)
-
-@app.get("/dashboard/analytics", response_class=HTMLResponse)
-async def view_analytics(request: Request):
-    try:
-        data = get_analytics_data()
-        data['insights'] = generate_insights(data)
-        return render_template("analytics.html", request, {"data": data})
-    except Exception as e:
-        return f"Error loading analytics: {e}"
+            return JSONResponse(status_code=500, content={"message": str(e)})
+    return {"status": "success", "message": "Campaign created"}
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
