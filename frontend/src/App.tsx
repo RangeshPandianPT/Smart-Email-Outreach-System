@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 
 interface Lead {
   id: number;
@@ -63,6 +64,62 @@ function App() {
             + New Campaign
           </button>
         </header>
+
+        {summary && !loading && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div className="card p-6 h-64">
+              <h3 className="text-lg font-medium text-white mb-4">Lead Status Distribution</h3>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={[
+                      { name: 'Pending', value: summary.pending_leads },
+                      { name: 'Drafted', value: summary.drafted_leads },
+                      { name: 'Sent', value: summary.sent_leads },
+                      { name: 'Replied', value: summary.replied_leads }
+                    ]}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={80}
+                    paddingAngle={5}
+                    dataKey="value"
+                  >
+                    <Cell fill="#facc15" /> {/* Yellow for Pending */}
+                    <Cell fill="#a855f7" /> {/* Purple for Drafted */}
+                    <Cell fill="#3b82f6" /> {/* Blue for Sent */}
+                    <Cell fill="#10b981" /> {/* Emerald for Replied */}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '0.5rem', color: '#f8fafc' }}
+                    itemStyle={{ color: '#e2e8f0' }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            
+            <div className="card p-6 h-64">
+              <h3 className="text-lg font-medium text-white mb-4">Engagement Funnel</h3>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={[
+                  { name: 'Total Leads', count: summary.total_leads },
+                  { name: 'Sent Emails', count: summary.sent_leads },
+                  { name: 'Replies', count: analytics?.total_replies || 0 },
+                  { name: 'Interested', count: analytics?.interested || 0 }
+                ]}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                  <XAxis dataKey="name" stroke="#94a3b8" tick={{fill: '#94a3b8'}} axisLine={false} tickLine={false} />
+                  <YAxis stroke="#94a3b8" tick={{fill: '#94a3b8'}} axisLine={false} tickLine={false} />
+                  <Tooltip 
+                    cursor={{fill: '#334155'}}
+                    contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '0.5rem', color: '#f8fafc' }}
+                  />
+                  <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
 
         <div className="grid gap-4 md:grid-cols-4 mb-8">
           <div className="card p-5">
