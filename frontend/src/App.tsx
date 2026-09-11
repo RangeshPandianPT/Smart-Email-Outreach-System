@@ -30,14 +30,72 @@ interface Analytics {
 }
 
 function App() {
+  const [token, setToken] = useState<string | null>(localStorage.getItem('access_token'));
   const [leads, setLeads] = useState<Lead[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+
+  const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
+    const headers = new Headers(options.headers || {});
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
+    return fetch(url, { ...options, headers });
+  };
+
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    try {
+      const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/signup';
+      const body = new URLSearchParams();
+      body.append('username', email);
+      body.append('password', password);
+
+      const res = await fetch(`http://localhost:8000${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body
+      });
+      const data = await res.json();
+      
+      if (!res.ok) throw new Error(data.detail || 'Authentication failed');
+
+      if (authMode === 'login') {
+        localStorage.setItem('access_token', data.access_token);
+        setToken(data.access_token);
+      } else {
+        setAuthMode('login');
+        setAuthError('Signup successful! Please login.');
+      }
+    } catch (err: any) {
+      setAuthError(err.message);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('access_token');
+    setToken(null);
+  };
+
   useEffect(() => {
-    fetch('http://localhost:8000/api/dashboard')
-      .then(res => res.json())
+    if (!token) return;
+    
+    setLoading(true);
+    fetchWithAuth('http://localhost:8000/api/dashboard')
+      .then(res => {
+        if (res.status === 401) {
+          handleLogout();
+          throw new Error('Unauthorized');
+        }
+        return res.json();
+      })
       .then(data => {
         setLeads(data.leads || []);
         setSummary(data.summary || null);
@@ -48,7 +106,51 @@ function App() {
         console.error('Failed to fetch dashboard data', err);
         setLoading(false);
       });
-  }, []);
+  }, [token]);
+
+  if (!token) {
+    return (
+      <div className="min-h-screen p-8 flex items-center justify-center">
+        <div className="card p-8 w-full max-w-md">
+          <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400 mb-6 text-center">
+            {authMode === 'login' ? 'Login to VFX Outreach' : 'Create an Account'}
+          </h2>
+          {authError && <div className="mb-4 text-red-400 text-sm text-center">{authError}</div>}
+          <form onSubmit={handleAuth} className="space-y-4">
+            <div>
+              <label className="block text-slate-400 text-sm mb-1">Email</label>
+              <input 
+                type="email" 
+                value={email} 
+                onChange={e => setEmail(e.target.value)} 
+                className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white" 
+                required 
+              />
+            </div>
+            <div>
+              <label className="block text-slate-400 text-sm mb-1">Password</label>
+              <input 
+                type="password" 
+                value={password} 
+                onChange={e => setPassword(e.target.value)} 
+                className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white" 
+                required 
+              />
+            </div>
+            <button type="submit" className="w-full btn-primary mt-4">
+              {authMode === 'login' ? 'Login' : 'Sign Up'}
+            </button>
+          </form>
+          <div className="mt-4 text-center text-sm text-slate-400">
+            {authMode === 'login' ? "Don't have an account? " : "Already have an account? "}
+            <button onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')} className="text-blue-400 hover:underline">
+              {authMode === 'login' ? 'Sign Up' : 'Login'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen p-8">
@@ -60,9 +162,14 @@ function App() {
             </h1>
             <p className="text-slate-400 mt-2">Manage your CRM, automate emails, and track performance.</p>
           </div>
-          <button className="btn-primary">
-            + New Campaign
-          </button>
+          <div className="flex gap-4">
+            <button className="btn-primary">
+              + New Campaign
+            </button>
+            <button onClick={handleLogout} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors font-medium">
+              Logout
+            </button>
+          </div>
         </header>
 
         {summary && !loading && (
@@ -85,10 +192,10 @@ function App() {
                     paddingAngle={5}
                     dataKey="value"
                   >
-                    <Cell fill="#facc15" /> {/* Yellow for Pending */}
-                    <Cell fill="#a855f7" /> {/* Purple for Drafted */}
-                    <Cell fill="#3b82f6" /> {/* Blue for Sent */}
-                    <Cell fill="#10b981" /> {/* Emerald for Replied */}
+                    <Cell fill="#facc15" />
+                    <Cell fill="#a855f7" />
+                    <Cell fill="#3b82f6" />
+                    <Cell fill="#10b981" />
                   </Pie>
                   <Tooltip 
                     contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '0.5rem', color: '#f8fafc' }}
