@@ -1,15 +1,16 @@
 import base64
 import binascii
 import time
+from datetime import datetime
 from bs4 import BeautifulSoup
 from src.services.gmail_client import get_gmail_service
-from src.core.database import get_db_connection
+from src.core.database import SessionLocal
+from src.core.models import Lead, InboxProcessedMessage
 from src.services.classifier import classify_reply
 
 PROCESSED = "processed"
 IGNORED = "ignored"
 FAILED = "failed"
-
 
 def _extract_sender_email(headers) -> str:
     for header in headers:
@@ -20,17 +21,14 @@ def _extract_sender_email(headers) -> str:
             return sender_raw.strip()
     return ""
 
-
 def _decode_body_data(body_data: str) -> str:
     if not body_data:
         return ""
-
     padded = body_data + '=' * (-len(body_data) % 4)
     try:
         return base64.urlsafe_b64decode(padded).decode('utf-8', errors='ignore')
     except (binascii.Error, ValueError):
         return ""
-
 
 def _find_part_text(payload, target_mime_type: str) -> str:
     if payload.get('mimeType') == target_mime_type:
@@ -46,7 +44,6 @@ def _find_part_text(payload, target_mime_type: str) -> str:
 
     return ""
 
-
 def _extract_message_text(payload) -> str:
     plain_text = _find_part_text(payload, 'text/plain')
     if plain_text:
@@ -60,18 +57,12 @@ def _extract_message_text(payload) -> str:
     fallback_text = _decode_body_data(root_body)
     return fallback_text.strip()
 
-
-def _already_processed(cursor, msg_id: str) -> bool:
-    cursor.execute(
-        "SELECT status FROM inbox_processed_messages WHERE message_id = ?",
-        (msg_id,),
-    )
-    row = cursor.fetchone()
-    return bool(row and row['status'] == PROCESSED)
-
+def _already_processed(db, msg_id: str) -> bool:
+    msg = db.query(InboxProcessedMessage).filter(InboxProcessedMessage.message_id == msg_id).first()
+    return bool(msg and msg.status == PROCESSED)
 
 def _record_message_status(
-    cursor,
+    db,
     msg_id: str,
     sender_email: str | None,
     lead_id: int | None,
@@ -80,33 +71,23 @@ def _record_message_status(
 ):
     error_value = (error or "")[:500] or None
 
-    cursor.execute(
-        "SELECT 1 FROM inbox_processed_messages WHERE message_id = ?",
-        (msg_id,),
-    )
-    existing = cursor.fetchone()
-
-    if existing:
-        cursor.execute(
-            """
-            UPDATE inbox_processed_messages
-            SET sender_email = ?,
-                lead_id = ?,
-                status = ?,
-                error = ?,
-                processed_at = CURRENT_TIMESTAMP
-            WHERE message_id = ?
-            """,
-            (sender_email, lead_id, status, error_value, msg_id),
-        )
+    msg = db.query(InboxProcessedMessage).filter(InboxProcessedMessage.message_id == msg_id).first()
+    if msg:
+        msg.sender_email = sender_email
+        msg.lead_id = lead_id
+        msg.status = status
+        msg.error = error_value
+        msg.processed_at = datetime.utcnow()
     else:
-        cursor.execute(
-            """
-            INSERT INTO inbox_processed_messages (message_id, sender_email, lead_id, status, error)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (msg_id, sender_email, lead_id, status, error_value),
+        new_msg = InboxProcessedMessage(
+            message_id=msg_id,
+            sender_email=sender_email,
+            lead_id=lead_id,
+            status=status,
+            error=error_value
         )
+        db.add(new_msg)
+    db.commit()
 
 def process_inbox():
     new_replies_count = 0
@@ -120,15 +101,14 @@ def process_inbox():
             print('No new replies found')
             return 0
 
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-
+        db = SessionLocal()
+        try:
             for msg_ref in messages:
                 msg_id = msg_ref.get('id')
                 if not msg_id:
                     continue
 
-                if _already_processed(cursor, msg_id):
+                if _already_processed(db, msg_id):
                     continue
 
                 msg = service.users().messages().get(userId='me', id=msg_id, format='full').execute()
@@ -138,11 +118,10 @@ def process_inbox():
                 sender_email = _extract_sender_email(headers)
 
                 if not sender_email:
-                    _record_message_status(cursor, msg_id, None, None, IGNORED, "missing_sender")
+                    _record_message_status(db, msg_id, None, None, IGNORED, "missing_sender")
                     continue
 
-                cursor.execute("SELECT * FROM leads WHERE lower(email) = lower(?)", (sender_email,))
-                lead = cursor.fetchone()
+                lead = db.query(Lead).filter(Lead.email.ilike(sender_email)).first()
 
                 if lead:
                     print(f"New reply detected from {sender_email}")
@@ -150,12 +129,7 @@ def process_inbox():
 
                     if not text_content:
                         _record_message_status(
-                            cursor,
-                            msg_id,
-                            sender_email,
-                            lead['id'],
-                            FAILED,
-                            "empty_or_undecodable_body",
+                            db, msg_id, sender_email, lead.id, FAILED, "empty_or_undecodable_body"
                         )
                         continue
 
@@ -163,49 +137,29 @@ def process_inbox():
                         classification = classify_reply(text_content)
                         print(f"Classified as {classification}")
 
-                        cursor.execute('''
-                            UPDATE leads
-                            SET status = 'Replied',
-                                deal_stage = ?,
-                                reply_status = ?,
-                                reply_text = ?,
-                                reply_timestamp = CURRENT_TIMESTAMP,
-                                last_message_id = ?,
-                                last_updated = CURRENT_TIMESTAMP
-                            WHERE id = ?
-                        ''', (classification, classification, text_content, msg_id, lead['id']))
+                        lead.status = 'Replied'
+                        lead.deal_stage = classification
+                        lead.reply_status = classification
+                        lead.reply_text = text_content
+                        lead.reply_timestamp = datetime.utcnow()
+                        lead.last_message_id = msg_id
 
-                        # Only mark message as read once it maps to a lead and processing succeeds.
                         service.users().messages().modify(
                             userId='me',
                             id=msg_id,
                             body={'removeLabelIds': ['UNREAD']},
                         ).execute()
 
-                        _record_message_status(cursor, msg_id, sender_email, lead['id'], PROCESSED)
+                        _record_message_status(db, msg_id, sender_email, lead.id, PROCESSED)
                         print('Database updated')
                         new_replies_count += 1
                     except Exception as e:
-                        _record_message_status(
-                            cursor,
-                            msg_id,
-                            sender_email,
-                            lead['id'],
-                            FAILED,
-                            str(e),
-                        )
+                        _record_message_status(db, msg_id, sender_email, lead.id, FAILED, str(e))
                         print(f"Failed to process matched reply for {sender_email}: {e}")
                 else:
-                    # Keep unmatched unread emails untouched for manual triage.
-                    _record_message_status(
-                        cursor,
-                        msg_id,
-                        sender_email,
-                        None,
-                        IGNORED,
-                        "sender_not_in_leads",
-                    )
-
+                    _record_message_status(db, msg_id, sender_email, None, IGNORED, "sender_not_in_leads")
+        finally:
+            db.close()
     except Exception as e:
         print(f'Error checking inbox: {e}')
 
