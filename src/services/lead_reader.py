@@ -1,6 +1,7 @@
 import pandas as pd
 import re
-from src.core.database import get_db_connection
+from src.core.database import SessionLocal
+from src.core.models import Lead
 
 def is_valid_email(email: str) -> bool:
     """
@@ -21,9 +22,8 @@ def import_leads_from_csv(csv_path: str):
         return 0
 
     inserted_count = 0
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-
+    db = SessionLocal()
+    try:
         for _, row in df.iterrows():
             email = str(row.get('Email', '')).strip()
 
@@ -36,15 +36,29 @@ def import_leads_from_csv(csv_path: str):
             company = str(row.get('Company', '')).strip()
             service_needed = str(row.get('Service Needed', '')).strip()
 
-            try:
-                cursor.execute("""
-                    INSERT INTO leads (name, role, company, email, service_needed, status, deal_stage)
-                    VALUES (?, ?, ?, ?, ?, 'Pending', 'Cold')
-                """, (name, role, company, email, service_needed))
-                inserted_count += 1
-            except Exception as e:
-                print(f"Failed to insert {email} (may be duplicate): {e}")
-
+            existing = db.query(Lead).filter(Lead.email == email).first()
+            if not existing:
+                try:
+                    lead = Lead(
+                        name=name, 
+                        role=role, 
+                        company=company, 
+                        email=email, 
+                        service_needed=service_needed, 
+                        status='Pending', 
+                        deal_stage='Cold'
+                    )
+                    db.add(lead)
+                    inserted_count += 1
+                except Exception as e:
+                    print(f"Failed to insert {email}: {e}")
+        db.commit()
+    except Exception as e:
+        print(f"Failed during import: {e}")
+        db.rollback()
+    finally:
+        db.close()
+        
     print(f"Imported {inserted_count} new leads from {csv_path}")
     return inserted_count
 
