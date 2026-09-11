@@ -1,40 +1,30 @@
 import base64
 import time
 import random
-from datetime import datetime
+from datetime import datetime, date
 from email.message import EmailMessage
+from sqlalchemy import func
 from src.services.gmail_client import get_gmail_service
-from src.core.database import get_db_connection
+from src.core.database import SessionLocal
+from src.core.models import Lead, EmailLog
 from src.core.config import settings
 from src.services.email_generator import generate_followup_email
 from src.core.logger import setup_logger
-
-logger = setup_logger("email_sender")
-
-
-
-def _emails_sent_today(cursor) -> int:
-    cursor.execute(
-        """
-        SELECT COUNT(*)
-        FROM leads
-        WHERE email_sent_timestamp IS NOT NULL
-          AND date(email_sent_timestamp, 'localtime') = date('now', 'localtime')
-        """
-    )
-    return cursor.fetchone()[0]
-
-
-def _can_send_more_today(cursor) -> bool:
-    return _emails_sent_today(cursor) < settings.MAX_EMAILS_PER_DAY
-
-
 from src.services.rate_limiter import RateLimiter
-from src.core.logger import setup_logger
 
 logger = setup_logger("email_sender")
 
-# Apply rate limiters to the send function
+def _emails_sent_today(db) -> int:
+    today = date.today()
+    count = db.query(func.count(Lead.id)).filter(
+        Lead.email_sent_timestamp != None,
+        func.date(Lead.email_sent_timestamp) == today
+    ).scalar()
+    return count or 0
+
+def _can_send_more_today(db) -> bool:
+    return _emails_sent_today(db) < settings.MAX_EMAILS_PER_DAY
+
 @RateLimiter(max_calls=settings.RATE_LIMIT_PER_HOUR, period_seconds=3600)
 @RateLimiter(max_calls=settings.RATE_LIMIT_PER_MINUTE, period_seconds=60)
 @RateLimiter(max_calls=1, period_seconds=1.0/settings.RATE_LIMIT_PER_SECOND)
@@ -61,7 +51,6 @@ def create_message(to_email, subject, body_text, previous_message_id=None, threa
     message = EmailMessage()
     message.set_content(body_text)
     message['To'] = to_email
-    # Let Gmail API use the authenticated account as sender to avoid From mismatch errors.
     message['Subject'] = subject
     
     if previous_message_id:
@@ -75,145 +64,104 @@ def create_message(to_email, subject, body_text, previous_message_id=None, threa
     return payload
 
 def send_email_to_lead(lead_id: int):
-    # Retrieves the lead from Db, generates subject and body (if not generated),      
-    # and sends via Gmail API. Updates DB with status and thread_id.
     try:
         service = get_gmail_service()
     except Exception as e:
         logger.error(f"Failed to initialize Gmail service for lead {lead_id}: {type(e).__name__}: {e}")
         return False
 
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-
-        if not _can_send_more_today(cursor):
+    db = SessionLocal()
+    try:
+        if not _can_send_more_today(db):
             limit_msg = (
                 f"Daily send limit reached ({settings.MAX_EMAILS_PER_DAY}). "
                 f"Lead {lead_id} will remain queued."
             )
-            cursor.execute(
-                """
-                UPDATE leads
-                SET last_send_error = ?,
-                    last_send_attempt_timestamp = CURRENT_TIMESTAMP,
-                    last_updated = CURRENT_TIMESTAMP
-                WHERE id = ?
-                """,
-                (limit_msg, lead_id),
-            )
+            lead = db.query(Lead).filter(Lead.id == lead_id).first()
+            if lead:
+                lead.last_send_error = limit_msg
+                lead.last_send_attempt_timestamp = datetime.utcnow()
+                db.commit()
             logger.warning(limit_msg)
             return False
 
-        cursor.execute("SELECT * FROM leads WHERE id = ?", (lead_id,))
-        lead = cursor.fetchone()
-
+        lead = db.query(Lead).filter(Lead.id == lead_id).first()
         if not lead:
             logger.info(f"Lead {lead_id} not found.")
             return False
 
-        if lead['status'] in ('Sent', 'Replied'):
+        if lead.status in ('Sent', 'Replied'):
             logger.info(f"Lead {lead_id} already processed.")
             return False
 
-        # We assume email_generator has populated the DB, but to keep concerns separated,
-        # we pull from email_logs if we drafted it there.
-        # For simplicity, we'll fetch the drafted email from email_logs
-        cursor.execute("SELECT * FROM email_logs WHERE lead_id = ? ORDER BY id DESC LIMIT 1", (lead_id,))
-        draft = cursor.fetchone()
-
+        draft = db.query(EmailLog).filter(EmailLog.lead_id == lead_id).order_by(EmailLog.id.desc()).first()
         if not draft:
             logger.info(f"No draft found for lead {lead_id}.")
             return False
 
         try:
-            cursor.execute(
-                """
-                UPDATE leads
-                SET send_attempts = COALESCE(send_attempts, 0) + 1,
-                    last_send_attempt_timestamp = CURRENT_TIMESTAMP,
-                    last_updated = CURRENT_TIMESTAMP
-                WHERE id = ?
-                """,
-                (lead_id,),
-            )
+            lead.send_attempts = (lead.send_attempts or 0) + 1
+            lead.last_send_attempt_timestamp = datetime.utcnow()
+            db.commit()
 
-            # Create Gmail message
-            body = draft['body']
-            subject = draft['subject']
-            to_email = lead['email']
+            msg = create_message(lead.email, draft.subject, draft.body)
 
-            msg = create_message(to_email, subject, body)
-
-            # Send message with transient retry support.
             sent_message = _send_with_retry(service, msg, max_attempts=3)
             message_id = sent_message['id']
-            thread_id = sent_message['threadId']
+            thread_id = sent_message.get('threadId')
 
-            # Update DB
-            cursor.execute(
-                """
-                UPDATE leads
-                SET status = 'Sent',
-                    thread_id = ?,
-                    last_updated = CURRENT_TIMESTAMP,
-                    email_sent_timestamp = CURRENT_TIMESTAMP,
-                    last_send_error = NULL
-                WHERE id = ?
-                """,
-                (thread_id, lead_id),
-            )
+            lead.status = 'Sent'
+            lead.thread_id = thread_id
+            lead.email_sent_timestamp = datetime.utcnow()
+            lead.last_send_error = None
+            
+            draft.sent_at = datetime.utcnow()
+            draft.message_id = message_id
+            
+            db.commit()
 
-            cursor.execute("UPDATE email_logs SET sent_at = CURRENT_TIMESTAMP, message_id = ? WHERE id = ?", (message_id, draft['id']))
-
-            logger.info(f"Sent email to {to_email}. Thread ID: {thread_id}")
+            logger.info(f"Sent email to {lead.email}. Thread ID: {thread_id}")
             return True
 
         except Exception as e:
-            cursor.execute(
-                """
-                UPDATE leads
-                SET last_send_error = ?,
-                    last_updated = CURRENT_TIMESTAMP
-                WHERE id = ?
-                """,
-                (f"{type(e).__name__}: {e}"[:500], lead_id),
-            )
-            logger.error(f"Failed to send to {lead['email']}: {type(e).__name__}: {e}")
+            lead.last_send_error = f"{type(e).__name__}: {e}"[:500]
+            db.commit()
+            logger.error(f"Failed to send to {lead.email}: {type(e).__name__}: {e}")
             return False
+    finally:
+        db.close()
 
-def process_email_queue():
-    # Finds leads with status 'Drafted', sends them one by one, with delays.
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        # Find all leads that have an email log but are not 'Sent'
-        cursor.execute("""
-            SELECT DISTINCT l.id
-            FROM leads l
-            JOIN email_logs el ON l.id = el.lead_id
-            WHERE l.status = 'Approved'
-              AND el.sent_at IS NULL
-        """)
-        pending_leads = cursor.fetchall()
+def process_email_queue_db():
+    db = SessionLocal()
+    try:
+        pending_leads = db.query(Lead).join(EmailLog).filter(
+            Lead.status == 'Approved',
+            EmailLog.sent_at == None
+        ).distinct().all()
 
-        if not _can_send_more_today(cursor):
+        if not _can_send_more_today(db):
             logger.warning(f"Daily send limit reached ({settings.MAX_EMAILS_PER_DAY}). Queue processing skipped.")
             return
 
-    if not pending_leads:
-        logger.info("No pending drafted emails in queue.")
-        return
+        if not pending_leads:
+            logger.info("No pending drafted emails in queue.")
+            return
 
-    logger.info(f"Processing email queue for {len(pending_leads)} lead(s).")
+        logger.info(f"Processing email queue for {len(pending_leads)} lead(s).")
+        
+        # Store IDs since the session state could change inside the loop or across threads
+        lead_ids = [l.id for l in pending_leads]
+    finally:
+        db.close()
 
-    for row in pending_leads:
-        lead_id = row['id']
-
-        # Re-check in each loop in case other jobs sent emails during this run.
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            if not _can_send_more_today(cursor):
+    for lead_id in lead_ids:
+        db = SessionLocal()
+        try:
+            if not _can_send_more_today(db):
                 print(f"Daily send limit reached ({settings.MAX_EMAILS_PER_DAY}). Stopping queue.")
                 break
+        finally:
+            db.close()
 
         try:
             success = send_email_to_lead(lead_id)
@@ -227,49 +175,60 @@ def process_email_queue():
             time.sleep(delay)
 
 def process_followups():
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM leads WHERE status = 'Sent' AND followup_count < 2 AND email_sent_timestamp IS NOT NULL")
+    db = SessionLocal()
+    try:
+        leads = db.query(Lead).filter(
+            Lead.status == 'Sent',
+            Lead.followup_count < 2,
+            Lead.email_sent_timestamp != None
+        ).all()
         
-        leads = cursor.fetchall()
         for lead in leads:
             now = datetime.utcnow()
-            last_action_str = lead['last_followup_timestamp'] or lead['email_sent_timestamp']
+            last_action = lead.last_followup_timestamp or lead.email_sent_timestamp
             
-            # Follow-up 1 after 48h, Follow-up 2 after 96h (4 days)
-            delay_hours = 48 if lead['followup_count'] == 0 else 96
+            delay_hours = 48 if lead.followup_count == 0 else 96
             
             try:
-                last_action = datetime.strptime(last_action_str, '%Y-%m-%d %H:%M:%S')
                 diff_hours = (now - last_action).total_seconds() / 3600
                 if diff_hours >= delay_hours:
-                    print(f"Triggering follow-up {lead['followup_count'] + 1} for {lead['email']}")
+                    print(f"Triggering follow-up {lead.followup_count + 1} for {lead.email}")
                     
-                    # Fetch previous email log for context and threading
-                    cursor.execute("SELECT * FROM email_logs WHERE lead_id = ? ORDER BY id DESC LIMIT 1", (lead['id'],))
-                    prev_log = cursor.fetchone()
-                    
+                    prev_log = db.query(EmailLog).filter(EmailLog.lead_id == lead.id).order_by(EmailLog.id.desc()).first()
                     if not prev_log:
-                        print(f"No previous email log found for lead {lead['id']}. Skipping follow-up.")
+                        print(f"No previous email log found for lead {lead.id}. Skipping follow-up.")
                         continue
                         
-                    subject = prev_log['subject']
-                    body = generate_followup_email(lead, prev_log['body'], lead['followup_count'] + 1)
-                    to_email = lead['email']
+                    # Prepare dict for followup generator
+                    lead_dict = {
+                        "name": lead.name, "company": lead.company, "role": lead.role
+                    }
+                    body = generate_followup_email(lead_dict, prev_log.body, lead.followup_count + 1)
                     
                     service = get_gmail_service()
                     msg = create_message(
-                        to_email=to_email, 
-                        subject=subject, 
+                        to_email=lead.email, 
+                        subject=prev_log.subject, 
                         body_text=body,
-                        previous_message_id=prev_log['message_id'],
-                        thread_id=lead['thread_id']
+                        previous_message_id=prev_log.message_id,
+                        thread_id=lead.thread_id
                     )
                     
                     sent_msg = service.users().messages().send(userId='me', body=msg).execute()
                     
-                    cursor.execute("UPDATE leads SET followup_count = followup_count + 1, last_followup_timestamp = CURRENT_TIMESTAMP WHERE id = ?", (lead['id'],))
-                    cursor.execute("INSERT INTO email_logs (lead_id, subject, body, sent_at, message_id) VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)", (lead['id'], subject, body, sent_msg['id']))
-                    conn.commit()
+                    lead.followup_count += 1
+                    lead.last_followup_timestamp = datetime.utcnow()
+                    
+                    new_log = EmailLog(
+                        lead_id=lead.id,
+                        subject=prev_log.subject,
+                        body=body,
+                        sent_at=datetime.utcnow(),
+                        message_id=sent_msg['id']
+                    )
+                    db.add(new_log)
+                    db.commit()
             except Exception as e:
-                print(f"Error processing follow-up for lead {lead['id']}: {e}")
+                print(f"Error processing follow-up for lead {lead.id}: {e}")
+    finally:
+        db.close()
