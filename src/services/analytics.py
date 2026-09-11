@@ -1,21 +1,19 @@
-import sqlite3
-from src.core.database import get_db_connection
+from src.core.database import SessionLocal
+from sqlalchemy import text
+from src.core.models import Lead
 
 def get_analytics_data():
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        
+    db = SessionLocal()
+    try:
         # Total sent
-        cursor.execute("SELECT COUNT(*) FROM leads WHERE status IN ('Sent', 'Replied')")
-        total_sent = cursor.fetchone()[0]
+        total_sent = db.query(Lead).filter(Lead.status.in_(['Sent', 'Replied'])).count()
         
         # Total replies
-        cursor.execute("SELECT COUNT(*) FROM leads WHERE status = 'Replied'")
-        total_replies = cursor.fetchone()[0]
+        total_replies = db.query(Lead).filter(Lead.status == 'Replied').count()
         
         # Breakdown by status
-        cursor.execute("SELECT reply_status, COUNT(*) FROM leads WHERE status = 'Replied' GROUP BY reply_status")
-        breakdown = {row[0]: row[1] for row in cursor.fetchall()}
+        breakdown_query = db.query(Lead.reply_status, text("COUNT(*)")).filter(Lead.status == 'Replied').group_by(Lead.reply_status).all()
+        breakdown = {row[0]: row[1] for row in breakdown_query if row[0]}
         
         interested = breakdown.get('Interested', 0)
         not_interested = breakdown.get('Not Interested', 0)
@@ -28,9 +26,8 @@ def get_analytics_data():
         if total_sent > 0:
             conversion_rate = round((interested / total_sent) * 100, 2)
             
-        # Average response time
-        # Convert timestamp strings to julianday difference, multiply by 24 for hours
-        cursor.execute("""
+        # Average response time using raw sqlite julianday because it's specific
+        rt_query = text("""
             SELECT AVG(
                 (julianday(reply_timestamp) - julianday(email_sent_timestamp)) * 24
             )
@@ -39,7 +36,7 @@ def get_analytics_data():
               AND email_sent_timestamp IS NOT NULL
               AND status = 'Replied'
         """)
-        avg_rt = cursor.fetchone()[0]
+        avg_rt = db.execute(rt_query).scalar()
         avg_response_time_hours = round(avg_rt, 2) if avg_rt else 0.0
         
         return {
@@ -53,6 +50,8 @@ def get_analytics_data():
             "conversion_rate": conversion_rate,
             "avg_response_time_hours": avg_response_time_hours
         }
+    finally:
+        db.close()
 
 def generate_insights(analytics_data):
     insights = []
