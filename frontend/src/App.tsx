@@ -12,6 +12,14 @@ interface Lead {
   deal_stage: string;
 }
 
+interface LeadDetails {
+  lead: Lead;
+  draft: {
+    subject: string;
+    body: string;
+  } | null;
+}
+
 interface Summary {
   total_leads: number;
   pending_leads: number;
@@ -35,6 +43,11 @@ function App() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const [selectedLeadId, setSelectedLeadId] = useState<number | null>(null);
+  const [leadDetails, setLeadDetails] = useState<LeadDetails | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalLoading, setModalLoading] = useState(false);
 
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
@@ -82,6 +95,29 @@ function App() {
   const handleLogout = () => {
     localStorage.removeItem('access_token');
     setToken(null);
+  };
+
+  const openLeadModal = async (leadId: number) => {
+    setSelectedLeadId(leadId);
+    setIsModalOpen(true);
+    setModalLoading(true);
+    
+    try {
+      const res = await fetchWithAuth(`http://localhost:8000/api/leads/${leadId}`);
+      if (!res.ok) throw new Error('Failed to fetch lead details');
+      const data = await res.json();
+      setLeadDetails(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setModalLoading(false);
+    }
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setSelectedLeadId(null);
+    setLeadDetails(null);
   };
 
   useEffect(() => {
