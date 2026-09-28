@@ -253,6 +253,22 @@ async def get_dashboard_data(db: Session = Depends(get_db), current_user: User =
         logger.error(f"Error fetching dashboard data: {exc}")
         return {"leads": [], "summary": {}, "analytics": {}, "error": str(exc)}
 
+@app.get("/api/leads/{lead_id}")
+async def get_lead_details(lead_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        return JSONResponse(status_code=404, content={"message": "Lead not found"})
+    
+    draft = db.query(EmailLog).filter(EmailLog.lead_id == lead_id).order_by(EmailLog.id.desc()).first()
+    
+    return {
+        "lead": lead,
+        "draft": {
+            "subject": draft.subject,
+            "body": draft.body
+        } if draft else None
+    }
+
 @app.get("/api/analytics")
 async def get_analytics(current_user: User = Depends(get_current_user)):
     try:
