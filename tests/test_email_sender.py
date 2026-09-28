@@ -102,6 +102,6 @@ def test_process_email_queue_calls_sender_for_pending_drafts(monkeypatch):
     monkeypatch.setattr(email_sender, "send_email_to_lead", _fake_send)
     monkeypatch.setattr(email_sender.time, "sleep", lambda *_args, **_kwargs: None)
 
-    email_sender.process_email_queue()
+    email_sender.process_email_queue_db()
 
     assert sorted(called_ids) == sorted(lead_ids)

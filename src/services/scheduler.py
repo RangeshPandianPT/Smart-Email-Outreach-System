@@ -1,6 +1,6 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 import time
-from src.services.email_sender import process_email_queue, process_followups
+from src.services.email_sender import process_email_queue_db as process_email_queue, process_followups
 from src.services.inbox_reader import process_inbox
 import atexit
 from src.core.logger import setup_logger
